@@ -454,7 +454,7 @@ compliance-assistant\
     ├── test_frontend.py     # 界面：真 Chrome + axe 无障碍扫描（17 个用例）
     ├── frontend_probe.js    #   在页面里跑的采集探针（只取事实，判定在 Python 里）
     ├── vendor\axe.min.js    #   axe-core（仅测试用，不影响离线运行）
-    └── eval_report.md       # 最近一次评测报告
+    └── eval_report.md       # 最近一次评测报告（生成物，跑评测才有）
 ```
 
 **想改配色**：编辑 `web\css\style.css` 最上面的 `:root` 里的颜色变量（规范见 `docs/03`）。
