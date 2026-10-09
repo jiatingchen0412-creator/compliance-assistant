@@ -21,6 +21,16 @@
  *        --settle 2500 \
  *        --out result.json
  *
+ * 要截图时用 --screenshot（可另配 --pre 先跟页面交互一下）：
+ *   node tools/cdp_eval.js --url http://127.0.0.1:8791/ \
+ *        --pre <点击某条会话的 js> --settle 4000 \
+ *        --width 1440 --height 1360 --screenshot shot.png
+ *
+ * 为什么截图要走这里而不是 chrome --screenshot：
+ *   命令行那个只能靠 --virtual-time-budget 等页面，而虚拟时间不吃网络请求——
+ *   接口还没回来预算就用完了，截出来常常是空状态（实测复现过好几次）。
+ *   这里等的是真实时间，稳定得多。
+ *
  * 结果永远写进 --out 指定的文件，不走 stdout——这样调用方不需要开管道，
  * 在受限的执行环境里也不会因为管道而失败。
  */
@@ -192,13 +202,15 @@ async function removeDirWithRetry(dir) {
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const outFile = args.out;
-  if (!outFile) {
-    process.stderr.write('缺少 --out\n');
+  if (!outFile && !args.screenshot) {
+    process.stderr.write('缺少 --out（或者 --screenshot）\n');
     return 2;
   }
 
   const result = { ok: false, url: args.url || null, error: null, value: null };
-  const write = () => fs.writeFileSync(outFile, JSON.stringify(result, null, 2), 'utf8');
+  const write = () => {
+    if (outFile) fs.writeFileSync(outFile, JSON.stringify(result, null, 2), 'utf8');
+  };
 
   const chromePath = findChrome(args.chrome);
   if (!chromePath) {
@@ -262,6 +274,21 @@ async function main() {
     await cdp.send('Page.navigate', { url: args.url });
     await loaded;
 
+    // --pre：加载完先跟页面交互（点一条会话、展开一节目录……），再去等页面自己的
+    // fetch 落地。要截"打开某条历史会话"的样子就必须走这一步。
+    if (args.pre && fs.existsSync(args.pre)) {
+      const preRes = await cdp.send('Runtime.evaluate', {
+        expression: fs.readFileSync(args.pre, 'utf8'),
+        returnByValue: true,
+        awaitPromise: true,
+        userGesture: true,
+      });
+      if (preRes.exceptionDetails) {
+        const d = preRes.exceptionDetails;
+        throw new Error('--pre 脚本抛异常：' + (d.exception && d.exception.description ? d.exception.description : d.text));
+      }
+    }
+
     // 页面自己的 fetch（会话列表、统计、目录树）要等一会儿才落地
     await sleep(settle);
 
@@ -295,6 +322,12 @@ async function main() {
     } else {
       result.value = evalRes.result ? evalRes.result.value : null;
       result.ok = true;
+    }
+
+    if (args.screenshot) {
+      const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+      fs.writeFileSync(args.screenshot, Buffer.from(shot.data, 'base64'));
+      result.screenshot = path.resolve(args.screenshot);
     }
   } catch (err) {
     result.error = String((err && err.stack) || err);

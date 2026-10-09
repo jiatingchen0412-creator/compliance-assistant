@@ -22,6 +22,7 @@
 """
 from __future__ import annotations
 
+import http.client
 import json
 import socket
 import sqlite3
@@ -31,7 +32,7 @@ import tempfile
 import threading
 import time
 import traceback
-import urllib.request
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -133,15 +134,34 @@ def _start_server(port: int):
     return server, thread
 
 
-def _wait_ready(url: str, timeout: float = 30.0) -> bool:
+# 探测本机临时服务时有两个坑，都是实测踩出来的：
+#
+# 1. 不能用 urllib：Windows 上装了代理软件（这台机器上是 127.0.0.1:7897）之后，
+#    它会把这个回环地址也交给代理，症状是"临时服务没能在 30 秒内就绪"，
+#    但同一时刻用裸 socket 打过去是 200。app/llm.py 给 Ollama 加 trust_env=False
+#    是同一个坑，那边是 httpx。http.client 根本不读代理设置，最干净。
+# 2. 不能在服务还没 accept 的时候就一个劲地连——实测从 t+0 开始猛试，
+#    服务会一直不出响应（连 50 秒都起不来）；等几秒再问，第一次就 200。
+#    所以先睡 3 秒，之后才开始探。
+def _wait_ready(url: str, timeout: float = 60.0) -> bool:
+    parsed = urllib.parse.urlsplit(url)
+    host, port = parsed.hostname, parsed.port
+    path = parsed.path or "/"
+    time.sleep(3.0)
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(url, timeout=2) as r:
-                if r.status == 200:
-                    return True
+            conn = http.client.HTTPConnection(host, port, timeout=3)
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            status = resp.status
+            resp.read()
+            conn.close()
+            if status == 200:
+                return True
         except Exception:
-            time.sleep(0.2)
+            pass
+        time.sleep(0.3)
     return False
 
 

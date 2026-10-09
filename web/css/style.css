@@ -619,6 +619,33 @@ a:hover { text-decoration: underline; }
   overflow-wrap: anywhere;
 }
 
+/* 正文里的 Markdown 是 web/js/chat.js 的 renderAnswer() 转出来的，
+   只会出现 p / ul / ol / li / strong / code 这几种标签 */
+.answer-text p { margin: 0 0 var(--sp-3); }
+.answer-text p:last-child { margin-bottom: 0; }
+
+.answer-text ul,
+.answer-text ol {
+  margin: 0 0 var(--sp-3);
+  padding-left: 1.4em;
+}
+.answer-text ul:last-child,
+.answer-text ol:last-child { margin-bottom: 0; }
+.answer-text li { margin-bottom: var(--sp-1); }
+.answer-text li:last-child { margin-bottom: 0; }
+.answer-text li::marker { color: var(--text-3); }
+
+.answer-text strong { font-weight: 600; }
+
+.answer-text code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.92em;
+  background: var(--n-100);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xs);
+  padding: 1px 5px;
+}
+
 /* 打字指示 */
 .status-line {
   display: inline-flex;

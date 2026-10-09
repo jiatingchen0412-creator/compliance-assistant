@@ -256,6 +256,55 @@ function addUserMessage(text) {
   scrollTop(true);
 }
 
+/* 把大模型写的 Markdown 渲染成 HTML。
+   提示词里要求模型用 Markdown 组织回答（**加粗**、- 列表、1. 编号），
+   之前用 textContent 直接显示，页面上就会留下字面的星号和减号，看着像没写完。
+   这里只认模型实际会用到的那一小撮语法，别的一律当普通文字：
+   不引 Markdown 库（要守住零依赖、离线可用），也不做完整解析。
+   安全上先 esc 再做替换，模型输出永远进不了标签上下文。 */
+function renderAnswer(text) {
+  const out = [];
+  let list = null;   // 'ul' | 'ol' | null
+
+  const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+  const inline = (s) => s
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  for (const raw of esc(text || '').split('\n')) {
+    const line = raw.replace(/\s+$/, '');
+    if (!line.trim()) { closeList(); continue; }
+
+    const heading = line.match(/^\s*#{1,6}\s+(.+)$/);
+    if (heading) {
+      closeList();
+      out.push(`<p><strong>${inline(heading[1])}</strong></p>`);
+      continue;
+    }
+
+    // 减号、星号、圆点都当无序列表；"1." "1)" 当有序列表
+    const bullet = line.match(/^\s*[-*•]\s+(.+)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (bullet || numbered) {
+      const want = bullet ? 'ul' : 'ol';
+      if (list !== want) { closeList(); out.push(`<${want}>`); list = want; }
+      out.push(`<li>${inline((bullet || numbered)[1])}</li>`);
+      continue;
+    }
+
+    closeList();
+    out.push(`<p>${inline(line.trim())}</p>`);
+  }
+
+  closeList();
+  return out.join('');
+}
+
+/* 正文统一从这里写，保证流式增量、整段替换、历史回放三条路径渲染一致 */
+function setAnswer(el, text) {
+  el.innerHTML = renderAnswer(text);
+}
+
 function addAssistantMessage(answerText, meta) {
   removeEmptyState();
   const scroll = document.getElementById('chatScroll');
@@ -272,7 +321,7 @@ function addAssistantMessage(answerText, meta) {
 
   const textEl = document.createElement('div');
   textEl.className = 'answer-text';
-  textEl.textContent = answerText;
+  setAnswer(textEl, answerText);
   bubble.appendChild(textEl);
 
   const citeBox = document.createElement('div');
@@ -477,7 +526,7 @@ async function send(text) {
           bubble.appendChild(textEl);
         }
         acc += d.text;
-        textEl.textContent = acc;
+        setAnswer(textEl, acc);
         scrollTop();
       },
       // 服务端在生成结束后的校验里改动了正文（位置序号翻译、补免责声明、
@@ -490,7 +539,7 @@ async function send(text) {
           bubble.appendChild(textEl);
         }
         acc = d.text;
-        textEl.textContent = acc;
+        setAnswer(textEl, acc);
         scrollTop();
       },
       meta: (d) => {
@@ -498,7 +547,7 @@ async function send(text) {
           bubble.innerHTML = '';
           textEl = document.createElement('div');
           textEl.className = 'answer-text';
-          textEl.textContent = acc;
+          setAnswer(textEl, acc);
           bubble.appendChild(textEl);
         }
         // 风险条插到最上面
