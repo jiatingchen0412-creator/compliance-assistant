@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>知识库管理 · 安全合规自查助手</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- 图标雪碧图（与对话页同一套，离线可用） -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v13"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-filetext" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip-link" href="#clauseList">跳到条款列表</a>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <button class="icon-btn" id="navToggle" type="button" aria-label="打开目录树" aria-expanded="false" aria-controls="kbTree">
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-menu"/></svg>
+  </button>
+
+  <div class="logo">
+    <span class="shield"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg></span>
+    <span class="wordmark">安全合规自查助手</span>
+  </div>
+
+  <nav aria-label="主导航">
+    <a href="/">对话自查</a>
+    <a href="/kb" class="active" aria-current="page">知识库</a>
+  </nav>
+
+  <div class="spacer"></div>
+  <div class="status-chip" id="statusChip" title="检索引擎状态" role="status">加载中…</div>
+</header>
+
+<div class="kb-layout">
+  <!-- 左侧目录树（窄屏时收成抽屉） -->
+  <aside class="kb-tree" id="kbTree" aria-label="标准与章节">
+    <div class="sidebar-label">标准与章节</div>
+    <div id="treeBox"></div>
+  </aside>
+
+  <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
+
+  <!-- 右侧内容 -->
+  <main class="kb-main">
+    <h1 class="kb-title">知识库总览</h1>
+    <div class="kb-sub" id="kbSub">已加载的合规条款与检索索引状态</div>
+
+    <div class="stat-grid" id="statGrid"></div>
+
+    <!-- 导入 -->
+    <!-- 这一整块是 h2 而不是 h3：页面已经有一个 h1（知识库总览），
+         从 h1 直接跳到 h3 是层级跳跃，屏幕阅读器用户按标题导航会以为漏了一段。 -->
+    <section class="import-panel" aria-labelledby="importTitle">
+      <h2 id="importTitle">导入资料</h2>
+      <p>
+        支持 <strong>标准 JSON</strong>（按固定格式，含条款编号）、以及
+        <strong>PDF / Word(.docx) / Markdown / TXT</strong> 文档（自动切分条款，编号由程序生成）。
+        导入的内容只存在您本机，不会上传。<br>
+        提示：等保2.0 国标全文需通过正规渠道购买，本项目不收录原文，仅提供公开控制项名称与自写要点摘要。
+      </p>
+      <div class="toolbar">
+        <label class="sr-only" for="fileInput">选择要导入的文件</label>
+        <input type="file" id="fileInput" accept=".json,.pdf,.docx,.md,.txt">
+        <button class="btn primary" id="btnUpload" type="button">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-upload"/></svg>
+          开始导入
+        </button>
+        <button class="btn" id="btnRebuild" type="button">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-refresh"/></svg>
+          重建检索索引
+        </button>
+        <button class="btn" id="btnRisk" type="button">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-alert"/></svg>
+          查看风险词表
+        </button>
+        <button class="btn" id="btnBatches" type="button">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-layers"/></svg>
+          查看导入批次
+        </button>
+      </div>
+    </section>
+
+    <!-- 筛选 -->
+    <div class="toolbar" role="search">
+      <label class="sr-only" for="searchBox">搜索条款</label>
+      <input type="text" id="searchBox" placeholder="搜索条款编号、标题、正文关键词，例如：身份鉴别 / 8.1.4.1 / 备份">
+
+      <label class="sr-only" for="stdSelect">按标准筛选</label>
+      <select id="stdSelect"><option value="">全部标准</option></select>
+
+      <label class="sr-only" for="riskSelect">按风险类型筛选</label>
+      <select id="riskSelect">
+        <option value="">全部风险类型</option>
+        <option value="encryption">数据加密</option>
+        <option value="access_control">访问控制</option>
+        <option value="personal_info">个人信息保护</option>
+        <option value="audit_log">安全审计与日志</option>
+        <option value="backup_recovery">备份与恢复</option>
+        <option value="vulnerability">漏洞与补丁</option>
+        <option value="governance">制度与治理</option>
+      </select>
+
+      <label class="sr-only" for="levelSelect">按等级筛选</label>
+      <select id="levelSelect">
+        <option value="">全部等级</option>
+        <option value="S1">一级（S1/A1/G1）</option>
+        <option value="S2">二级（S2/A2/G2）</option>
+        <option value="S3">三级（S3/A3/G3）</option>
+      </select>
+
+      <button class="btn" id="btnReset" type="button">重置</button>
+    </div>
+
+    <div id="activeFilter" role="status"></div>
+    <div class="clause-list" id="clauseList"></div>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/kb.js"></script>
+</body>
+</html>

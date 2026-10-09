@@ -1,0 +1,368 @@
+{
+  "_说明": "检索与回答质量评测集。每次改检索参数、提示词或知识库后跑一遍 run_eval.py 回归。",
+  "_字段": {
+    "expect": "hit = 期望检索到条款；reject = 期望判定为『知识库中未找到』；out_of_kb = 用户点名了知识库未收录的法规；undeterminable = 要求判断条款适用性，无法在不了解系统时回答",
+    "must_include_any": "top-k 里必须至少出现其中一个条款编号（支持前缀匹配）",
+    "risk_expect": "期望被标 ⚠️ 的风险标签",
+    "risk_forbid": "即使模型『见谁都标』也不该出现的风险标签（防误标回归，不需要大模型即可验证）",
+    "out_of_kb_expect": "期望被识别出的库外法规名（子串匹配）",
+    "clarify_expect": "期望先追问（信息不足的问题，仅 --llm 端到端模式检查）"
+  },
+  "questions": [
+    {
+      "id": "q01",
+      "question": "我们公司十几个人都用同一个管理员账号登录进销存系统，这样有问题吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.1", "8.1.4.29", "8.2.3"],
+      "risk_expect": ["access_control"],
+      "note": "账号共享 → 身份鉴别/访问控制"
+    },
+    {
+      "id": "q02",
+      "question": "客户的手机号和收货地址都存在数据库里，没有做加密，需要注意什么？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.19", "8.1.4.18", "A02:2021"],
+      "risk_expect": ["encryption", "personal_info"],
+      "note": "明文存储个人信息 → 数据保密性"
+    },
+    {
+      "id": "q03",
+      "question": "员工离职之后，他的系统账号和权限一直没有人回收，合规上有什么要求？",
+      "expect": "hit",
+      "must_include_any": ["8.2.3", "8.1.4.6"],
+      "risk_expect": ["access_control"],
+      "note": "离职权限回收 → 人员离岗/账户管理"
+    },
+    {
+      "id": "q04",
+      "question": "我们的系统没有记录谁在什么时候做了哪些操作，这算不合规吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.8", "A09:2021"],
+      "risk_expect": ["audit_log"],
+      "note": "缺少日志 → 安全审计"
+    },
+    {
+      "id": "q05",
+      "question": "所有业务数据只存在一台服务器上，从来没有做过备份，有什么风险？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.21", "8.1.4.22"],
+      "risk_expect": ["backup_recovery"],
+      "note": "无备份 → 数据备份恢复"
+    },
+    {
+      "id": "q06",
+      "question": "我们的服务器操作系统很久没有更新过补丁了，会有什么合规问题？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.12", "A06:2021"],
+      "risk_expect": ["vulnerability"],
+      "note": "补丁管理 → 入侵防范"
+    },
+    {
+      "id": "q07",
+      "question": "我们的小程序要求用户上传身份证照片，需要满足哪些要求？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.28", "8.1.4.27", "8.1.4.26", "A02:2021"],
+      "risk_expect": ["personal_info"],
+      "note": "敏感个人信息 → 个人信息保护"
+    },
+    {
+      "id": "q08",
+      "question": "我们的网站被发现有SQL注入漏洞，该怎么办？",
+      "expect": "hit",
+      "must_include_any": ["A03:2021", "8.2.4.6"],
+      "risk_expect": ["app_security"],
+      "note": "注入类漏洞 → OWASP A03"
+    },
+    {
+      "id": "q09",
+      "question": "帮我看看 8.1.4.1 这一条具体要求什么？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.1"],
+      "risk_expect": ["access_control"],
+      "note": "按条款编号精确检索"
+    },
+    {
+      "id": "q10",
+      "question": "传输过程中的数据怎么保护？我们用 HTTP 明文传的。",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.18", "8.1.2", "A02:2021"],
+      "risk_expect": ["encryption"],
+      "note": "明文传输 → 通信保密性/传输加密"
+    },
+    {
+      "id": "q11",
+      "question": "我们的数据库管理员可以直接看到所有客户数据，这样合理吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.6", "8.1.4.7", "8.1.4.27", "8.1.5"],
+      "risk_expect": ["access_control"],
+      "note": "特权账号 → 访问控制/三权分立/个人信息访问控制"
+    },
+    {
+      "id": "q12",
+      "question": "系统里有默认管理员账号 admin，密码从来没改过。",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.6", "8.1.4.1", "8.1.4.29"],
+      "risk_expect": ["access_control"],
+      "note": "默认口令 → 身份鉴别"
+    },
+    {
+      "id": "q13",
+      "question": "我们打算把系统交给一家外包公司开发，需要注意什么？",
+      "expect": "hit",
+      "must_include_any": ["8.2.4", "ID.SC", "GV.SC"],
+      "risk_expect": ["supply_chain"],
+      "note": "外包开发 → 安全建设管理/供应链"
+    },
+    {
+      "id": "q14",
+      "question": "公司里没有任何信息安全相关的管理制度和责任人。",
+      "expect": "hit",
+      "must_include_any": ["8.2.1", "8.2.2", "GV"],
+      "risk_expect": ["governance"],
+      "note": "无制度无组织 → 安全管理制度/机构"
+    },
+    {
+      "id": "q15",
+      "question": "服务器机房就是公司储藏室，谁都能进去，有关系吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.1"],
+      "risk_expect": ["physical"],
+      "note": "物理环境 → 安全物理环境"
+    },
+    {
+      "id": "q16",
+      "question": "我们的系统部署在阿里云上，还需要自己做安全吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.2", "8.1.3", "8.2.4", "GV.SC"],
+      "risk_expect": [],
+      "note": "云上责任共担 → 通信网络/区域边界/服务供应商管理"
+    },
+    {
+      "id": "q17",
+      "question": "发现一次数据泄露事件后应该怎么处理？",
+      "expect": "hit",
+      "must_include_any": ["8.2.5", "RS.MA", "RS.AN", "DE.AE"],
+      "risk_expect": ["incident_response"],
+      "note": "应急响应"
+    },
+    {
+      "id": "q18",
+      "question": "怎么防止服务器中勒索病毒？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.21", "8.1.4.12", "8.2.5", "PR.PS"],
+      "risk_expect": ["backup_recovery"],
+      "note": "勒索 → 备份恢复/恶意代码防范"
+    },
+    {
+      "id": "q19",
+      "question": "我们的系统安全吗？",
+      "expect": "hit",
+      "must_include_any": [],
+      "risk_expect": [],
+      "clarify_expect": true,
+      "note": "信息不足，检索会命中但模型应该先追问"
+    },
+    {
+      "id": "q20",
+      "question": "合规要花很多钱吗？",
+      "expect": "hit",
+      "must_include_any": [],
+      "risk_expect": [],
+      "clarify_expect": true,
+      "note": "信息不足，应先追问系统情况"
+    },
+    {
+      "id": "q21",
+      "question": "今天天气怎么样？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "完全无关，必须拒答"
+    },
+    {
+      "id": "q22",
+      "question": "推荐几部好看的电影",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "完全无关，必须拒答"
+    },
+    {
+      "id": "q23",
+      "question": "帮我写一首关于春天的诗",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "完全无关，必须拒答"
+    },
+    {
+      "id": "q24",
+      "question": "明天股市会涨吗？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "完全无关，必须拒答"
+    },
+    {
+      "id": "q25",
+      "question": "中午吃什么比较好",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "完全无关，必须拒答"
+    },
+    {
+      "id": "q26",
+      "question": "我们的系统要做等保三级，需要满足哪些技术要求？",
+      "expect": "hit",
+      "must_include_any": ["8.1"],
+      "risk_expect": [],
+      "note": "等保技术要求"
+    },
+    {
+      "id": "q27",
+      "question": "公司没有人负责信息安全，都是行政兼着做。",
+      "expect": "hit",
+      "must_include_any": ["8.2.2", "8.2.3", "GV.RR"],
+      "risk_expect": ["governance"],
+      "note": "安全管理人员/机构"
+    },
+    {
+      "id": "q28",
+      "question": "供应商给我们装的系统，怎么确认它没有留后门？",
+      "expect": "hit",
+      "must_include_any": ["8.2.4", "GV.SC", "PR.PS"],
+      "risk_expect": ["supply_chain"],
+      "note": "供应链安全"
+    },
+    {
+      "id": "q29",
+      "question": "用户注册时我们收集了手机号，需要告诉用户吗？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.27", "8.1.4.28", "PR.AT", "GV.OC"],
+      "risk_expect": ["personal_info"],
+      "note": "告知同意 → 个人信息保护"
+    },
+    {
+      "id": "q30",
+      "question": "系统日志要保存多久？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.8", "A09:2021"],
+      "risk_expect": ["audit_log"],
+      "note": "日志留存期限"
+    },
+
+    {
+      "id": "q31",
+      "question": "《个人信息保护法》第13条具体是怎么规定的？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["个人信息保护法"],
+      "risk_expect": [],
+      "note": "点名库外法规。实测模型会凭记忆转述、还把第5/6条的原则安到第13条上，再挂等保引用伪装成有据可查"
+    },
+    {
+      "id": "q32",
+      "question": "我们要不要提前准备 GDPR 的合规工作？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["GDPR"],
+      "risk_expect": [],
+      "note": "库外法规（欧盟）"
+    },
+    {
+      "id": "q33",
+      "question": "ISO 27001 认证和等保2.0 有什么区别？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["ISO/IEC 27001"],
+      "risk_expect": [],
+      "note": "库外标准，且与已收录标准并列提问，容易误以为库里有"
+    },
+    {
+      "id": "q34",
+      "question": "《网络安全法》对日志留存有什么要求？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["网络安全法"],
+      "risk_expect": [],
+      "note": "库外法律 + 与库内安全审计主题重叠，最容易张冠李戴"
+    },
+    {
+      "id": "q35",
+      "question": "我们想把客户数据传到境外，数据出境安全评估办法怎么走？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["数据出境"],
+      "risk_expect": [],
+      "note": "数据出境相关办法未收录"
+    },
+    {
+      "id": "q36",
+      "question": "等保2.0 的云计算安全扩展要求有哪些？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["扩展要求"],
+      "risk_expect": [],
+      "note": "知识库只收录了安全通用要求，四类扩展要求都未收录（对应 v2.0 的 P4-1）"
+    },
+    {
+      "id": "q37",
+      "question": "等保2.0里关于安全审计的要求是什么？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.8", "8.1.4.9", "8.1.4.10"],
+      "risk_expect": ["audit_log"],
+      "risk_forbid": ["personal_info", "encryption"],
+      "note": "防误标回归：问安全审计却被标了『个人信息保护』（条款正文里顺带提到个人信息、关键词里有『留存期限』）。被检索到的条款没有一条带 personal_info 标签、标题里也没有，因此这是强不变量。"
+    },
+    {
+      "id": "q38",
+      "question": "系统日志要保存多久，有没有明确规定？",
+      "expect": "hit",
+      "must_include_any": ["8.1.4.8", "A09:2021"],
+      "risk_expect": ["audit_log"],
+      "risk_forbid": ["encryption"],
+      "note": "防误标回归：日志留存与加密无关。注意这里不禁止 personal_info——命中的 8.1.4.26 本身就带 personal_info 标签，模型若真引用了它，标注是正确的，不该当误标。"
+    },
+    {
+      "id": "q39",
+      "question": "请直接把等保三级里所有不适用的条款编号列出来，不用解释。",
+      "expect": "undeterminable",
+      "risk_expect": [],
+      "note": "适用性判定。实测模型把检索到的 8.2.4.11/8.2.4.1/8.1.4.30 等当成『不适用条款』直接吐出来"
+    },
+    {
+      "id": "q40",
+      "question": "等保三级里哪些条款不适用于我们？",
+      "expect": "undeterminable",
+      "risk_expect": [],
+      "note": "适用性判定"
+    },
+    {
+      "id": "q41",
+      "question": "帮我找出我们系统所有还没覆盖到的等保要求。",
+      "expect": "undeterminable",
+      "risk_expect": [],
+      "note": "差距分析，必须先知道系统长什么样"
+    },
+    {
+      "id": "q42",
+      "question": "这条 8.1.4.1 对我们适用吗？",
+      "expect": "undeterminable",
+      "risk_expect": [],
+      "note": "单条适用性判定，同样需要系统上下文"
+    },
+    {
+      "id": "q43",
+      "question": "我们公司到底需不需要做等保？",
+      "expect": "hit",
+      "must_include_any": [],
+      "risk_expect": [],
+      "clarify_expect": true,
+      "note": "信息不足，应先追问系统情况（仅 --llm 端到端模式检查）"
+    },
+    {
+      "id": "q44",
+      "question": "我们的数据安全吗？",
+      "expect": "hit",
+      "must_include_any": [],
+      "risk_expect": [],
+      "clarify_expect": true,
+      "note": "信息不足，应先追问（仅 --llm 端到端模式检查）"
+    }
+  ]
+}

@@ -1,0 +1,2557 @@
+{
+  "standard": {
+    "id": "nist_csf_2.0",
+    "name": "NIST CSF 2.0",
+    "full_name": "NIST Cybersecurity Framework 2.0",
+    "version": "2.0",
+    "publisher": "NIST (美国国家标准与技术研究院)",
+    "license": "public-domain",
+    "source_url": "https://www.nist.gov/cyberframework",
+    "note": "来源：NIST Cybersecurity Framework (CSF) 2.0，NIST CSWP 29，2024 年 2 月 26 日发布，官方网址 https://www.nist.gov/cyberframework 。NIST 为美国联邦政府机构，其出版物属美国政府作品，在美国境内不受版权保护，属公共领域（public domain），可自由复制、分发与改编。本文件的英文条款文本取自该官方文件附录 A（CSF Core）并按原样引用；条款标题、中文翻译、要点摘要与检索关键词均为本项目自行撰写/翻译，不属于官方文本，仅供参考，不构成合规结论。"
+  },
+  "clauses": [
+    {
+      "clause_id": "GV.OC-01",
+      "title": "组织使命与安全风险管理衔接",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "组织背景 (GV.OC)"
+      ],
+      "text": "英文原文：The organizational mission is understood and informs cybersecurity risk management\n中文翻译：组织的使命得到理解，并用于指导网络安全风险管理工作。",
+      "text_type": "original",
+      "summary": "先弄清公司靠什么赚钱、做什么业务，再让网络安全风险管理服务于这个使命，而不是脱离业务空谈安全。",
+      "keywords": [
+        "组织使命",
+        "业务目标",
+        "主营业务",
+        "网络安全",
+        "老板视角",
+        "安全投入值不值"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OC-01"
+    },
+    {
+      "clause_id": "GV.OC-02",
+      "title": "理解内外部利益相关方需求",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "组织背景 (GV.OC)"
+      ],
+      "text": "英文原文：Internal and external stakeholders are understood, and their needs and expectations regarding cybersecurity risk management are understood and considered\n中文翻译：识别并理解内部与外部利益相关方，理解并考虑其在网络安全风险管理方面的需求与期望。",
+      "text_type": "original",
+      "summary": "梳理客户、员工、监管机构、合作方等各方对安全的要求与期待，并在风险管理中予以考虑。",
+      "keywords": [
+        "利益相关方",
+        "客户要求",
+        "监管要求",
+        "合作方诉求",
+        "甲方验收要求",
+        "谁在要求我们合规"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OC-02"
+    },
+    {
+      "clause_id": "GV.OC-03",
+      "title": "法律法规与合同要求识别",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "组织背景 (GV.OC)"
+      ],
+      "text": "英文原文：Legal, regulatory, and contractual requirements regarding cybersecurity — including privacy and civil liberties obligations — are understood and managed\n中文翻译：理解并管理与网络安全相关的法律、法规和合同要求，包括隐私与公民自由方面的义务。",
+      "text_type": "original",
+      "summary": "把适用的法律法规、行业监管规定和合同里的安全与隐私条款梳理成清单，明确义务并落实到管理动作中。",
+      "keywords": [
+        "法律法规",
+        "合规义务",
+        "隐私保护",
+        "个人信息保护法",
+        "合同安全条款",
+        "数据合规",
+        "要遵守哪些法律"
+      ],
+      "risk_tags": [
+        "governance",
+        "personal_info"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OC-03"
+    },
+    {
+      "clause_id": "GV.OC-04",
+      "title": "关键业务与对外服务识别",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "组织背景 (GV.OC)"
+      ],
+      "text": "英文原文：Critical objectives, capabilities, and services that external stakeholders depend on or expect from the organization are understood and communicated\n中文翻译：外部利益相关方所依赖或期望组织提供的关键目标、能力和服务得到理解与沟通。",
+      "text_type": "original",
+      "summary": "识别客户等外部方最依赖的关键业务与服务，评估其中断带来的影响，并在组织内外沟通到位。",
+      "keywords": [
+        "关键业务",
+        "核心服务",
+        "停摆影响",
+        "对外承诺",
+        "客户依赖",
+        "业务连续性",
+        "哪个系统停了最要命"
+      ],
+      "risk_tags": [
+        "governance",
+        "asset_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OC-04"
+    },
+    {
+      "clause_id": "GV.OC-05",
+      "title": "组织自身依赖项识别",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "组织背景 (GV.OC)"
+      ],
+      "text": "英文原文：Outcomes, capabilities, and services that the organization depends on are understood and communicated\n中文翻译：组织自身所依赖的成果、能力和服务得到理解与沟通。",
+      "text_type": "original",
+      "summary": "识别组织自身依赖的外部条件，如云服务、电力、网络线路、关键供应商，并评估单点依赖带来的风险。",
+      "keywords": [
+        "依赖关系",
+        "外部依赖",
+        "供应商依赖",
+        "云服务依赖",
+        "断供风险",
+        "单点依赖",
+        "离了谁就干不了活"
+      ],
+      "risk_tags": [
+        "governance",
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OC-05"
+    },
+    {
+      "clause_id": "GV.RM-01",
+      "title": "建立风险管理目标",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Risk management objectives are established and agreed to by organizational stakeholders\n中文翻译：风险管理目标已建立，并取得组织各利益相关方的认可。",
+      "text_type": "original",
+      "summary": "由管理层确定网络安全风险管理的目标，并取得业务、财务等相关方认可，使安全目标与经营目标一致。",
+      "keywords": [
+        "风险管理目标",
+        "安全目标",
+        "安全KPI",
+        "老板拍板",
+        "安全投入目标",
+        "要达成什么效果"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-01"
+    },
+    {
+      "clause_id": "GV.RM-02",
+      "title": "明确风险偏好与容忍度",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Risk appetite and risk tolerance statements are established, communicated, and maintained\n中文翻译：风险偏好与风险容忍度声明已建立、传达并持续维护。",
+      "text_type": "original",
+      "summary": "明确组织愿意承担多少网络安全风险、底线在哪里，并把这一尺度传达到各层级用于决策。",
+      "keywords": [
+        "风险偏好",
+        "风险容忍度",
+        "风险临界值",
+        "能接受多大风险",
+        "底线在哪",
+        "风险接受标准"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-02"
+    },
+    {
+      "clause_id": "GV.RM-03",
+      "title": "安全风险纳入企业风险管理",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Cybersecurity risk management activities and outcomes are included in enterprise risk management processes\n中文翻译：网络安全风险管理活动及其结果纳入企业风险管理流程。",
+      "text_type": "original",
+      "summary": "把网络安全风险与其他经营风险一并纳入企业风险管理体系，统一评估、统一上报、统一决策。",
+      "keywords": [
+        "企业风险管理",
+        "ERM",
+        "经营风险",
+        "董事会汇报",
+        "纳入经营决策",
+        "安全风险也是经营风险"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-03"
+    },
+    {
+      "clause_id": "GV.RM-04",
+      "title": "明确风险应对策略方向",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Strategic direction that describes appropriate risk response options is established and communicated\n中文翻译：明确并传达描述适当风险应对选项的战略方向。",
+      "text_type": "original",
+      "summary": "确定并传达风险应对的总体方向，说明在何种情况下选择规避、转移、减轻或接受风险。",
+      "keywords": [
+        "风险应对",
+        "风险处置",
+        "规避转移减轻接受",
+        "处置方案",
+        "风险怎么办",
+        "出了风险怎么选"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-04"
+    },
+    {
+      "clause_id": "GV.RM-05",
+      "title": "建立风险沟通渠道",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Lines of communication across the organization are established for cybersecurity risks, including risks from suppliers and other third parties\n中文翻译：建立贯穿组织的网络安全风险沟通渠道，覆盖来自供应商及其他第三方的风险。",
+      "text_type": "original",
+      "summary": "打通组织内部的安全风险上报与通报渠道，并覆盖供应商等第三方带来的风险信息传递。",
+      "keywords": [
+        "沟通渠道",
+        "风险上报",
+        "安全汇报",
+        "供应商风险通报",
+        "出事了找谁",
+        "问题怎么反馈"
+      ],
+      "risk_tags": [
+        "governance",
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-05"
+    },
+    {
+      "clause_id": "GV.RM-06",
+      "title": "标准化风险计算方法",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：A standardized method for calculating, documenting, categorizing, and prioritizing cybersecurity risks is established and communicated\n中文翻译：建立并传达用于计算、记录、分类和排序网络安全风险的标准化方法。",
+      "text_type": "original",
+      "summary": "统一风险的计算、记录、分类与排序方法，形成一致的风险台账，让高风险事项能被稳定地识别出来。",
+      "keywords": [
+        "风险评估方法",
+        "风险打分",
+        "风险分级",
+        "风险台账",
+        "高风险怎么排序",
+        "漏洞先修哪个"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-06"
+    },
+    {
+      "clause_id": "GV.RM-07",
+      "title": "识别正面风险与机遇",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "风险管理策略 (GV.RM)"
+      ],
+      "text": "英文原文：Strategic opportunities (i.e., positive risks) are characterized and are included in organizational cybersecurity risk discussions\n中文翻译：识别战略机遇（即正面风险），并将其纳入组织网络安全风险讨论。",
+      "text_type": "original",
+      "summary": "在讨论网络安全风险时同时识别可能带来收益的正面风险，例如通过安全能力赢得客户信任或新商机。",
+      "keywords": [
+        "正面风险",
+        "机遇",
+        "数字化机会",
+        "上云收益",
+        "安全带来商机",
+        "安全也能挣钱"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RM-07"
+    },
+    {
+      "clause_id": "GV.RR-01",
+      "title": "领导层承担网络安全责任",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "角色、职责与权限 (GV.RR)"
+      ],
+      "text": "英文原文：Organizational leadership is responsible and accountable for cybersecurity risk and fosters a culture that is risk-aware, ethical, and continually improving\n中文翻译：组织领导层对网络安全风险负有责任并接受问责，培育风险意识强、合乎道德并持续改进的文化。",
+      "text_type": "original",
+      "summary": "最高管理层对网络安全风险负最终责任，并推动形成重视风险、讲求诚信、持续改进的安全文化。",
+      "keywords": [
+        "领导责任",
+        "一把手负责",
+        "问责",
+        "安全文化",
+        "法定代表人责任",
+        "老板要担责"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RR-01"
+    },
+    {
+      "clause_id": "GV.RR-02",
+      "title": "明确安全角色与职责",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "角色、职责与权限 (GV.RR)"
+      ],
+      "text": "英文原文：Roles, responsibilities, and authorities related to cybersecurity risk management are established, communicated, understood, and enforced\n中文翻译：与网络安全风险管理相关的角色、职责和权限已建立、传达、理解并落实。",
+      "text_type": "original",
+      "summary": "明确谁负责网络安全、各自有哪些职责与权限，并确保相关人员知晓且实际执行。",
+      "keywords": [
+        "安全职责",
+        "岗位分工",
+        "谁负责安全",
+        "权限划分",
+        "没有专人管安全",
+        "安全到底归谁管"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RR-02"
+    },
+    {
+      "clause_id": "GV.RR-03",
+      "title": "配置与风险相称的资源",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "角色、职责与权限 (GV.RR)"
+      ],
+      "text": "英文原文：Adequate resources are allocated commensurate with the cybersecurity risk strategy, roles, responsibilities, and policies\n中文翻译：按照网络安全风险战略、角色、职责和政策配置充足的资源。",
+      "text_type": "original",
+      "summary": "根据安全战略与职责安排投入相应的人员、预算和工具，避免制度写了却没人没钱去落实。",
+      "keywords": [
+        "安全预算",
+        "人员投入",
+        "资源保障",
+        "安全经费",
+        "预算不够",
+        "没钱做安全"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RR-03"
+    },
+    {
+      "clause_id": "GV.RR-04",
+      "title": "安全要求纳入人力资源流程",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "角色、职责与权限 (GV.RR)"
+      ],
+      "text": "英文原文：Cybersecurity is included in human resources practices\n中文翻译：网络安全要求纳入人力资源管理实践。",
+      "text_type": "original",
+      "summary": "在招聘、入职、在职与离职各环节嵌入安全要求，如背景核查、保密协议、权限回收与安全考核。",
+      "keywords": [
+        "入职背景调查",
+        "保密协议",
+        "离职权限回收",
+        "员工管理",
+        "人走了账号还在",
+        "离职带走数据"
+      ],
+      "risk_tags": [
+        "governance",
+        "access_control",
+        "training"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.RR-04"
+    },
+    {
+      "clause_id": "GV.PO-01",
+      "title": "建立网络安全政策",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "政策 (GV.PO)"
+      ],
+      "text": "英文原文：Policy for managing cybersecurity risks is established based on organizational context, cybersecurity strategy, and priorities and is communicated and enforced\n中文翻译：基于组织背景、网络安全战略与优先事项建立网络安全风险管理政策，并予以传达和执行。",
+      "text_type": "original",
+      "summary": "结合自身业务情况与安全战略制定书面的网络安全政策，向全员传达并确保实际执行。",
+      "keywords": [
+        "安全制度",
+        "管理办法",
+        "信息安全方针",
+        "员工手册",
+        "公司安全规定",
+        "制度落地"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.PO-01"
+    },
+    {
+      "clause_id": "GV.PO-02",
+      "title": "安全政策的评审与更新",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "政策 (GV.PO)"
+      ],
+      "text": "英文原文：Policy for managing cybersecurity risks is reviewed, updated, communicated, and enforced to reflect changes in requirements, threats, technology, and organizational mission\n中文翻译：对网络安全风险管理政策进行评审、更新、传达和执行，以反映要求、威胁、技术和组织使命的变化。",
+      "text_type": "original",
+      "summary": "定期评审并更新安全政策，使其跟上法规要求、威胁形势、技术演进和业务变化，并及时传达执行。",
+      "keywords": [
+        "制度评审",
+        "制度更新",
+        "每年修订",
+        "制度过时",
+        "政策落地",
+        "规定早就不适用了"
+      ],
+      "risk_tags": [
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.PO-02"
+    },
+    {
+      "clause_id": "GV.OV-01",
+      "title": "战略成果评审与调整",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "监督 (GV.OV)"
+      ],
+      "text": "英文原文：Cybersecurity risk management strategy outcomes are reviewed to inform and adjust strategy and direction\n中文翻译：评审网络安全风险管理战略的成果，以指导和调整战略与方向。",
+      "text_type": "original",
+      "summary": "定期检视安全战略取得的成效，据此调整战略方向与资源投入，形成管理闭环。",
+      "keywords": [
+        "战略评审",
+        "安全复盘",
+        "管理评审",
+        "战略调整",
+        "安全方向对不对"
+      ],
+      "risk_tags": [
+        "governance",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OV-01"
+    },
+    {
+      "clause_id": "GV.OV-02",
+      "title": "战略覆盖度审查",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "监督 (GV.OV)"
+      ],
+      "text": "英文原文：The cybersecurity risk management strategy is reviewed and adjusted to ensure coverage of organizational requirements and risks\n中文翻译：评审并调整网络安全风险管理战略，确保覆盖组织的要求与风险。",
+      "text_type": "original",
+      "summary": "检查安全战略是否覆盖了全部合规要求和已识别风险，找出管理盲区并及时补充。",
+      "keywords": [
+        "覆盖度",
+        "战略缺口",
+        "要求覆盖",
+        "管理盲区",
+        "还有哪些没管到"
+      ],
+      "risk_tags": [
+        "governance",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OV-02"
+    },
+    {
+      "clause_id": "GV.OV-03",
+      "title": "风险管理绩效评价",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "监督 (GV.OV)"
+      ],
+      "text": "英文原文：Organizational cybersecurity risk management performance is evaluated and reviewed for adjustments needed\n中文翻译：评价并评审组织网络安全风险管理的绩效，以确定所需调整。",
+      "text_type": "original",
+      "summary": "用可衡量的指标评价网络安全风险管理的绩效，定期评审并据此做出改进调整。",
+      "keywords": [
+        "绩效评价",
+        "安全指标",
+        "KPI考核",
+        "效果评估",
+        "安全做得好不好"
+      ],
+      "risk_tags": [
+        "governance",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.OV-03"
+    },
+    {
+      "clause_id": "GV.SC-01",
+      "title": "建立供应链风险管理方案",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：A cybersecurity supply chain risk management program, strategy, objectives, policies, and processes are established and agreed to by organizational stakeholders\n中文翻译：建立网络安全供应链风险管理方案、战略、目标、政策与流程，并取得组织利益相关方的认可。",
+      "text_type": "original",
+      "summary": "建立覆盖供应商与第三方的网络安全供应链风险管理方案，明确目标、策略与流程并取得各方认可。",
+      "keywords": [
+        "供应链安全",
+        "供应商管理",
+        "外包风险",
+        "第三方风险",
+        "采购安全",
+        "外包靠不靠谱"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-01"
+    },
+    {
+      "clause_id": "GV.SC-02",
+      "title": "明确供应商与合作伙伴安全职责",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Cybersecurity roles and responsibilities for suppliers, customers, and partners are established, communicated, and coordinated internally and externally\n中文翻译：明确供应商、客户与合作伙伴的网络安全角色与职责，并在内外部进行传达与协调。",
+      "text_type": "original",
+      "summary": "与供应商、客户和合作伙伴明确各自在网络安全上的角色与责任，并在内外做好沟通协调。",
+      "keywords": [
+        "供应商职责",
+        "合作方责任",
+        "合同责任划分",
+        "出事谁负责",
+        "外包安全责任"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-02"
+    },
+    {
+      "clause_id": "GV.SC-03",
+      "title": "供应链风险纳入整体风险管理",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Cybersecurity supply chain risk management is integrated into cybersecurity and enterprise risk management, risk assessment, and improvement processes\n中文翻译：将网络安全供应链风险管理纳入网络安全与企业风险管理、风险评估及改进流程。",
+      "text_type": "original",
+      "summary": "把供应链安全风险并入组织整体的网络安全与企业风险管理、风险评估和改进流程中统一管理。",
+      "keywords": [
+        "供应链风险纳入",
+        "第三方风险评估",
+        "供应商风险台账",
+        "外包风险管理"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-03"
+    },
+    {
+      "clause_id": "GV.SC-04",
+      "title": "供应商清单与关键度分级",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Suppliers are known and prioritized by criticality\n中文翻译：掌握供应商情况，并按关键程度进行优先级排序。",
+      "text_type": "original",
+      "summary": "建立供应商清单并按其对业务的关键程度分级，识别出必须重点管控的关键供应商。",
+      "keywords": [
+        "供应商清单",
+        "供应商分级",
+        "关键供应商",
+        "外包台账",
+        "用了哪些云服务",
+        "到底用了谁家服务"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "asset_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-04"
+    },
+    {
+      "clause_id": "GV.SC-05",
+      "title": "合同中的网络安全要求",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Requirements to address cybersecurity risks in supply chains are established, prioritized, and integrated into contracts and other types of agreements with suppliers and other relevant third parties\n中文翻译：建立应对供应链网络安全风险的要求，排定优先级，并将其纳入与供应商及其他相关第三方的合同和协议。",
+      "text_type": "original",
+      "summary": "把安全与数据保护要求写进采购合同和服务协议，明确供应商应达到的安全水平与违约责任。",
+      "keywords": [
+        "合同安全条款",
+        "供应商安全要求",
+        "数据保密条款",
+        "服务水平协议",
+        "合同里没写安全"
+      ],
+      "risk_tags": [
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-05"
+    },
+    {
+      "clause_id": "GV.SC-06",
+      "title": "供应商准入尽职调查",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Planning and due diligence are performed to reduce risks before entering into formal supplier or other third-party relationships\n中文翻译：在建立正式供应商或其他第三方关系之前，开展规划与尽职调查以降低风险。",
+      "text_type": "original",
+      "summary": "在与供应商建立正式合作前开展规划和尽职调查，评估其安全能力与风险，避免盲目引入。",
+      "keywords": [
+        "尽职调查",
+        "供应商准入",
+        "背景审查",
+        "选型评估",
+        "随便找的外包"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-06"
+    },
+    {
+      "clause_id": "GV.SC-07",
+      "title": "供应商风险持续监测",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：The risks posed by a supplier, their products and services, and other third parties are understood, recorded, prioritized, assessed, responded to, and monitored over the course of the relationship\n中文翻译：在合作关系存续期间，理解、记录、排序、评估、应对并监测供应商及其产品服务和其他第三方带来的风险。",
+      "text_type": "original",
+      "summary": "在合作全过程中持续识别、记录、评估并监测供应商风险，对发现的问题及时应对和跟踪。",
+      "keywords": [
+        "供应商监控",
+        "第三方风险监测",
+        "供应商安全评估",
+        "年度复审",
+        "外包一直没管"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-07"
+    },
+    {
+      "clause_id": "GV.SC-08",
+      "title": "供应商纳入应急响应",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Relevant suppliers and other third parties are included in incident planning, response, and recovery activities\n中文翻译：将相关供应商和其他第三方纳入事件规划、响应与恢复活动。",
+      "text_type": "original",
+      "summary": "把关键供应商和第三方纳入事件的预案、响应和恢复安排，明确联络方式与协同处置责任。",
+      "keywords": [
+        "供应商应急",
+        "第三方联动",
+        "出事找厂商",
+        "联合演练",
+        "厂商联系方式"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-08"
+    },
+    {
+      "clause_id": "GV.SC-09",
+      "title": "供应链安全全生命周期管理",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Supply chain security practices are integrated into cybersecurity and enterprise risk management programs, and their performance is monitored throughout the technology product and service life cycle\n中文翻译：将供应链安全实践纳入网络安全与企业风险管理方案，并在技术产品和服务全生命周期内监测其绩效。",
+      "text_type": "original",
+      "summary": "把供应链安全实践融入风险管理体系，并在产品与服务的全生命周期内持续监测其落实情况。",
+      "keywords": [
+        "全生命周期",
+        "采购到退役",
+        "供应商绩效",
+        "服务到期",
+        "产品停服"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-09"
+    },
+    {
+      "clause_id": "GV.SC-10",
+      "title": "合作关系终止后的安全安排",
+      "chapter_path": [
+        "治理 (GOVERN, GV)",
+        "网络安全供应链风险管理 (GV.SC)"
+      ],
+      "text": "英文原文：Cybersecurity supply chain risk management plans include provisions for activities that occur after the conclusion of a partnership or service agreement\n中文翻译：网络安全供应链风险管理计划包含合作或服务协议结束后相关活动的安排。",
+      "text_type": "original",
+      "summary": "在供应链风险管理中预先安排合作结束后的安全事项，如数据交还销毁、账号注销与权限回收。",
+      "keywords": [
+        "退出机制",
+        "数据交还",
+        "账号注销",
+        "服务到期",
+        "换供应商后数据怎么办"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "GV.SC-10"
+    },
+    {
+      "clause_id": "ID.AM-01",
+      "title": "硬件资产清单",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Inventories of hardware managed by the organization are maintained\n中文翻译：维护组织管理的硬件资产清单。",
+      "text_type": "original",
+      "summary": "建立并持续维护硬件资产清单，做到设备台账清楚、责任到人，避免出现无人认领的设备。",
+      "keywords": [
+        "硬件清单",
+        "设备台账",
+        "服务器台账",
+        "电脑登记",
+        "公司有几台电脑都不清楚"
+      ],
+      "risk_tags": [
+        "asset_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-01"
+    },
+    {
+      "clause_id": "ID.AM-02",
+      "title": "软件与服务资产清单",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Inventories of software, services, and systems managed by the organization are maintained\n中文翻译：维护组织管理的软件、服务和系统清单。",
+      "text_type": "original",
+      "summary": "建立并维护软件、系统与服务清单，掌握在用版本与用途，避免出现无人管理的影子系统。",
+      "keywords": [
+        "软件清单",
+        "系统台账",
+        "装了什么软件",
+        "用了哪些系统",
+        "软件资产",
+        "有哪些系统在跑"
+      ],
+      "risk_tags": [
+        "asset_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-02"
+    },
+    {
+      "clause_id": "ID.AM-03",
+      "title": "网络架构与数据流图",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Representations of the organization’s authorized network communication and internal and external network data flows are maintained\n中文翻译：维护组织授权网络通信以及内部和外部网络数据流的表示（网络架构与数据流图）。",
+      "text_type": "original",
+      "summary": "绘制并维护网络架构图和内外部数据流图，明确授权通信关系，为隔离与监测提供依据。",
+      "keywords": [
+        "网络拓扑",
+        "数据流图",
+        "架构图",
+        "网络怎么连的",
+        "数据流向哪里"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "network_security"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-03"
+    },
+    {
+      "clause_id": "ID.AM-04",
+      "title": "供应商服务清单",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Inventories of services provided by suppliers are maintained\n中文翻译：维护供应商所提供服务的清单。",
+      "text_type": "original",
+      "summary": "建立供应商所提供服务的清单，明确每项服务承载的业务与数据，便于评估第三方风险。",
+      "keywords": [
+        "供应商服务清单",
+        "外包服务台账",
+        "云服务清单",
+        "用了哪些第三方"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-04"
+    },
+    {
+      "clause_id": "ID.AM-05",
+      "title": "资产分级与优先级排序",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Assets are prioritized based on classification, criticality, resources, and impact on the mission\n中文翻译：依据分类、关键性、资源和对使命的影响对资产进行优先级排序。",
+      "text_type": "original",
+      "summary": "按数据分类、业务关键性和影响程度对资产分级排序，把有限的安全资源投向最重要的资产。",
+      "keywords": [
+        "资产分级",
+        "重要资产",
+        "关键系统",
+        "核心数据",
+        "哪个系统最重要"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-05"
+    },
+    {
+      "clause_id": "ID.AM-07",
+      "title": "数据资产清单",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Inventories of data and corresponding metadata for designated data types are maintained\n中文翻译：维护指定数据类型的数据清单及相应元数据。",
+      "text_type": "original",
+      "summary": "建立数据资产清单与元数据，明确数据存放在哪里、由谁负责、属于哪一密级。",
+      "keywords": [
+        "数据清单",
+        "数据分类分级",
+        "有哪些数据",
+        "客户数据在哪",
+        "数据地图",
+        "数据都存在哪"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "data_security",
+        "personal_info"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-07"
+    },
+    {
+      "clause_id": "ID.AM-08",
+      "title": "资产全生命周期管理",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "资产管理 (ID.AM)"
+      ],
+      "text": "英文原文：Systems, hardware, software, services, and data are managed throughout their life cycles\n中文翻译：在系统、硬件、软件、服务和数据的整个生命周期内进行管理。",
+      "text_type": "original",
+      "summary": "对系统、硬件、软件、服务和数据实施从采购上线到退役销毁的全生命周期管理。",
+      "keywords": [
+        "生命周期管理",
+        "上线退役",
+        "设备报废",
+        "数据销毁",
+        "旧电脑怎么处理"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.AM-08"
+    },
+    {
+      "clause_id": "ID.RA-01",
+      "title": "漏洞识别与记录",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Vulnerabilities in assets are identified, validated, and recorded\n中文翻译：识别、验证并记录资产中的脆弱性。",
+      "text_type": "original",
+      "summary": "通过扫描与评估发现资产中的脆弱性，验证其真实性并登记入账，形成漏洞台账。",
+      "keywords": [
+        "漏洞扫描",
+        "漏洞台账",
+        "脆弱性",
+        "系统漏洞",
+        "有漏洞不知道"
+      ],
+      "risk_tags": [
+        "vulnerability",
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-01"
+    },
+    {
+      "clause_id": "ID.RA-02",
+      "title": "威胁情报获取",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Cyber threat intelligence is received from information sharing forums and sources\n中文翻译：从信息共享论坛和来源接收网络威胁情报。",
+      "text_type": "original",
+      "summary": "订阅并接收来自信息共享渠道的威胁情报，及时掌握与本行业相关的新型攻击与漏洞预警。",
+      "keywords": [
+        "威胁情报",
+        "安全通告",
+        "漏洞预警",
+        "行业通报",
+        "最近有什么新攻击"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-02"
+    },
+    {
+      "clause_id": "ID.RA-03",
+      "title": "内外部威胁识别",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Internal and external threats to the organization are identified and recorded\n中文翻译：识别并记录组织面临的内部与外部威胁。",
+      "text_type": "original",
+      "summary": "识别并记录来自外部攻击者和内部人员的威胁，形成威胁清单作为风险评估的输入。",
+      "keywords": [
+        "威胁识别",
+        "内部人员风险",
+        "外部攻击",
+        "钓鱼邮件",
+        "谁会攻击我们"
+      ],
+      "risk_tags": [
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-03"
+    },
+    {
+      "clause_id": "ID.RA-04",
+      "title": "影响与可能性分析",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Potential impacts and likelihoods of threats exploiting vulnerabilities are identified and recorded\n中文翻译：识别并记录威胁利用脆弱性可能造成的影响与发生可能性。",
+      "text_type": "original",
+      "summary": "分析威胁利用脆弱性时可能造成的影响程度与发生可能性，为风险定级提供依据。",
+      "keywords": [
+        "影响分析",
+        "发生概率",
+        "风险矩阵",
+        "损失评估",
+        "出事了损失多大"
+      ],
+      "risk_tags": [
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-04"
+    },
+    {
+      "clause_id": "ID.RA-05",
+      "title": "固有风险与处置优先级",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Threats, vulnerabilities, likelihoods, and impacts are used to understand inherent risk and inform risk response prioritization\n中文翻译：利用威胁、脆弱性、可能性与影响来理解固有风险，并为风险应对的优先级排序提供依据。",
+      "text_type": "original",
+      "summary": "综合威胁、脆弱性、可能性与影响评估固有风险，据此确定风险应对的先后顺序。",
+      "keywords": [
+        "固有风险",
+        "风险排序",
+        "先修哪个",
+        "风险优先级",
+        "先处理哪个漏洞"
+      ],
+      "risk_tags": [
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-05"
+    },
+    {
+      "clause_id": "ID.RA-06",
+      "title": "风险应对计划与跟踪",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Risk responses are chosen, prioritized, planned, tracked, and communicated\n中文翻译：选择、排序、规划、跟踪并沟通风险应对措施。",
+      "text_type": "original",
+      "summary": "针对已识别风险选择应对措施，排定优先级、制定计划、跟踪落实并做好沟通。",
+      "keywords": [
+        "整改计划",
+        "风险处置",
+        "整改台账",
+        "跟踪闭环",
+        "问题整改了没有"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-06"
+    },
+    {
+      "clause_id": "ID.RA-07",
+      "title": "变更与例外风险管理",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Changes and exceptions are managed, assessed for risk impact, recorded, and tracked\n中文翻译：对变更与例外情形进行管理、评估其风险影响、记录并跟踪。",
+      "text_type": "original",
+      "summary": "对系统与配置变更以及安全要求的临时例外进行评估、审批、记录和跟踪，防止风险失控。",
+      "keywords": [
+        "变更管理",
+        "例外审批",
+        "配置变更",
+        "临时放行",
+        "为上线跳过安全"
+      ],
+      "risk_tags": [
+        "risk_mgmt",
+        "app_security"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-07"
+    },
+    {
+      "clause_id": "ID.RA-08",
+      "title": "漏洞披露响应流程",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Processes for receiving, analyzing, and responding to vulnerability disclosures are established\n中文翻译：建立接收、分析和响应漏洞披露的流程。",
+      "text_type": "original",
+      "summary": "建立对外接收漏洞报告、内部核实分析与响应处置的流程，明确联络方式与处理时限。",
+      "keywords": [
+        "漏洞披露",
+        "安全事件报告",
+        "白帽子",
+        "收到漏洞通知怎么办",
+        "外部报漏洞"
+      ],
+      "risk_tags": [
+        "vulnerability",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-08"
+    },
+    {
+      "clause_id": "ID.RA-09",
+      "title": "软硬件真实性与完整性核验",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：The authenticity and integrity of hardware and software are assessed prior to acquisition and use\n中文翻译：在采购和使用之前，评估硬件与软件的真实性和完整性。",
+      "text_type": "original",
+      "summary": "在采购和使用前核验硬件与软件的来源真实性和完整性，防止引入假冒或被篡改的产品。",
+      "keywords": [
+        "正版软件",
+        "来源可信",
+        "完整性校验",
+        "山寨设备",
+        "软件是不是正版"
+      ],
+      "risk_tags": [
+        "vulnerability",
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-09"
+    },
+    {
+      "clause_id": "ID.RA-10",
+      "title": "关键供应商采购前评估",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "风险评估 (ID.RA)"
+      ],
+      "text": "英文原文：Critical suppliers are assessed prior to acquisition\n中文翻译：在采购之前对关键供应商进行评估。",
+      "text_type": "original",
+      "summary": "在采购前对关键供应商的安全保障能力进行评估，把评估结论作为采购决策的依据。",
+      "keywords": [
+        "供应商评估",
+        "采购前审查",
+        "外包安全能力",
+        "云厂商资质",
+        "供应商靠不靠谱"
+      ],
+      "risk_tags": [
+        "supply_chain",
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.RA-10"
+    },
+    {
+      "clause_id": "ID.IM-01",
+      "title": "从评估中识别改进",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "改进 (ID.IM)"
+      ],
+      "text": "英文原文：Improvements are identified from evaluations\n中文翻译：从各类评估中识别改进机会。",
+      "text_type": "original",
+      "summary": "从安全自查、外部评估与审计结论中提炼改进事项，纳入整改并跟踪闭环。",
+      "keywords": [
+        "评估改进",
+        "自查整改",
+        "安全评估",
+        "持续改进",
+        "检查发现的问题"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.IM-01"
+    },
+    {
+      "clause_id": "ID.IM-02",
+      "title": "从测试演练中识别改进",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "改进 (ID.IM)"
+      ],
+      "text": "英文原文：Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties\n中文翻译：从安全测试与演练中识别改进机会，包括与供应商及相关第三方协同开展的测试与演练。",
+      "text_type": "original",
+      "summary": "通过渗透测试、攻防演练和应急演练发现短板，并把改进事项落实到制度和流程中。",
+      "keywords": [
+        "渗透测试",
+        "攻防演练",
+        "应急演练",
+        "演练总结",
+        "演习暴露的问题"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "vulnerability"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.IM-02"
+    },
+    {
+      "clause_id": "ID.IM-03",
+      "title": "从日常运营中识别改进",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "改进 (ID.IM)"
+      ],
+      "text": "英文原文：Improvements are identified from execution of operational processes, procedures, and activities\n中文翻译：从运营流程、程序和活动的执行中识别改进机会。",
+      "text_type": "original",
+      "summary": "在日常运维与安全运营中持续发现流程和程序上的不足，并推动改进形成标准化做法。",
+      "keywords": [
+        "运营改进",
+        "流程优化",
+        "日常运维",
+        "问题复盘",
+        "天天救火要改流程"
+      ],
+      "risk_tags": [
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.IM-03"
+    },
+    {
+      "clause_id": "ID.IM-04",
+      "title": "应急预案的建立与维护",
+      "chapter_path": [
+        "识别 (IDENTIFY, ID)",
+        "改进 (ID.IM)"
+      ],
+      "text": "英文原文：Incident response plans and other cybersecurity plans that affect operations are established, communicated, maintained, and improved\n中文翻译：建立、传达、维护并改进应急预案及其他影响运营的网络安全计划。",
+      "text_type": "original",
+      "summary": "建立并持续维护应急预案等影响运营的安全计划，确保相关人员知晓并随业务变化更新。",
+      "keywords": [
+        "应急预案",
+        "响应预案",
+        "预案更新",
+        "预案演练",
+        "出事有没有预案"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "ID.IM-04"
+    },
+    {
+      "clause_id": "PR.AA-01",
+      "title": "身份与凭证管理",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Identities and credentials for authorized users, services, and hardware are managed by the organization\n中文翻译：组织对授权用户、服务和硬件的身份与凭证进行管理。",
+      "text_type": "original",
+      "summary": "对用户、服务和硬件的身份与凭证实施全生命周期管理，杜绝共用账号与离职账号长期留存。",
+      "keywords": [
+        "账号管理",
+        "凭证管理",
+        "密码管理",
+        "共用账号",
+        "离职没删账号"
+      ],
+      "risk_tags": [
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-01"
+    },
+    {
+      "clause_id": "PR.AA-02",
+      "title": "身份核验与凭证绑定",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Identities are proofed and bound to credentials based on the context of interactions\n中文翻译：依据交互场景对身份进行核验，并将身份与凭证绑定。",
+      "text_type": "original",
+      "summary": "根据交互场景核验身份真实性，并将身份与其凭证可靠绑定，防止身份冒用与凭证转让。",
+      "keywords": [
+        "实名认证",
+        "身份核验",
+        "绑定手机",
+        "双因素",
+        "账号是不是本人"
+      ],
+      "risk_tags": [
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-02"
+    },
+    {
+      "clause_id": "PR.AA-03",
+      "title": "身份鉴别",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Users, services, and hardware are authenticated\n中文翻译：对用户、服务和硬件进行身份鉴别。",
+      "text_type": "original",
+      "summary": "对用户、服务和硬件实施身份鉴别，确保只有通过验证的主体才能访问系统，避免弱口令与匿名访问。",
+      "keywords": [
+        "身份鉴别",
+        "登录认证",
+        "强密码",
+        "多因素认证",
+        "密码太简单"
+      ],
+      "risk_tags": [
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-03"
+    },
+    {
+      "clause_id": "PR.AA-04",
+      "title": "身份断言保护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Identity assertions are protected, conveyed, and verified\n中文翻译：对身份断言进行保护、传递和验证。",
+      "text_type": "original",
+      "summary": "对单点登录令牌、证书等身份断言信息进行加密保护、安全传递与有效性验证，防止令牌被窃取冒用。",
+      "keywords": [
+        "身份断言",
+        "令牌安全",
+        "单点登录",
+        "SSO",
+        "登录凭证被偷"
+      ],
+      "risk_tags": [
+        "access_control",
+        "encryption"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-04"
+    },
+    {
+      "clause_id": "PR.AA-05",
+      "title": "访问权限与最小权限",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties\n中文翻译：访问权限、授权与许可在政策中定义、管理、执行和评审，并体现最小权限与职责分离原则。",
+      "text_type": "original",
+      "summary": "以制度形式定义并定期评审访问权限，落实最小权限与职责分离，避免权限过大与长期不回收。",
+      "keywords": [
+        "最小权限",
+        "权限回收",
+        "职责分离",
+        "越权访问",
+        "所有人都是管理员"
+      ],
+      "risk_tags": [
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-05"
+    },
+    {
+      "clause_id": "PR.AA-06",
+      "title": "物理访问控制",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "身份管理与访问控制 (PR.AA)"
+      ],
+      "text": "英文原文：Physical access to assets is managed, monitored, and enforced commensurate with risk\n中文翻译：按照风险程度对资产的物理访问进行管理、监测和执行。",
+      "text_type": "original",
+      "summary": "按风险程度管理并监测机房、办公区等场所的物理访问，控制谁能接触关键设备和介质。",
+      "keywords": [
+        "门禁",
+        "机房管理",
+        "物理访问",
+        "钥匙管理",
+        "谁都能进机房"
+      ],
+      "risk_tags": [
+        "physical",
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AA-06"
+    },
+    {
+      "clause_id": "PR.AT-01",
+      "title": "全员安全意识培训",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "意识与培训 (PR.AT)"
+      ],
+      "text": "英文原文：Personnel are provided with awareness and training so that they possess the knowledge and skills to perform general tasks with cybersecurity risks in mind\n中文翻译：为人员提供安全意识与培训，使其具备在考虑网络安全风险的前提下完成常规任务的知识与技能。",
+      "text_type": "original",
+      "summary": "面向全员开展安全意识教育与培训，使员工在日常工作中具备基本的安全判断与操作能力。",
+      "keywords": [
+        "安全意识",
+        "员工培训",
+        "防钓鱼",
+        "安全宣贯",
+        "员工乱点链接"
+      ],
+      "risk_tags": [
+        "training"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AT-01"
+    },
+    {
+      "clause_id": "PR.AT-02",
+      "title": "专业岗位专项培训",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "意识与培训 (PR.AT)"
+      ],
+      "text": "英文原文：Individuals in specialized roles are provided with awareness and training so that they possess the knowledge and skills to perform relevant tasks with cybersecurity risks in mind\n中文翻译：为承担专门角色的人员提供安全意识与培训，使其具备在考虑网络安全风险的前提下完成相关任务的知识与技能。",
+      "text_type": "original",
+      "summary": "针对运维、开发、财务等特定岗位开展专项安全培训，使其具备履职所需的安全知识技能。",
+      "keywords": [
+        "专项培训",
+        "运维培训",
+        "开发安全培训",
+        "岗位技能",
+        "技术岗不懂安全"
+      ],
+      "risk_tags": [
+        "training"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.AT-02"
+    },
+    {
+      "clause_id": "PR.DS-01",
+      "title": "静态数据保护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "数据安全 (PR.DS)"
+      ],
+      "text": "英文原文：The confidentiality, integrity, and availability of data-at-rest are protected\n中文翻译：保护静态数据的机密性、完整性和可用性。",
+      "text_type": "original",
+      "summary": "对存储中的数据库、文件与终端数据实施加密与访问控制，防止数据被窃取或篡改。",
+      "keywords": [
+        "存储加密",
+        "数据加密",
+        "数据库加密",
+        "硬盘加密",
+        "数据明文存着"
+      ],
+      "risk_tags": [
+        "encryption",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.DS-01"
+    },
+    {
+      "clause_id": "PR.DS-02",
+      "title": "传输数据保护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "数据安全 (PR.DS)"
+      ],
+      "text": "英文原文：The confidentiality, integrity, and availability of data-in-transit are protected\n中文翻译：保护传输中数据的机密性、完整性和可用性。",
+      "text_type": "original",
+      "summary": "对网络传输中的敏感数据实施加密与完整性保护，避免明文传输被窃听或篡改。",
+      "keywords": [
+        "传输加密",
+        "HTTPS",
+        "TLS",
+        "链路加密",
+        "明文传输"
+      ],
+      "risk_tags": [
+        "encryption",
+        "data_security",
+        "network_security"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.DS-02"
+    },
+    {
+      "clause_id": "PR.DS-10",
+      "title": "使用中数据保护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "数据安全 (PR.DS)"
+      ],
+      "text": "英文原文：The confidentiality, integrity, and availability of data-in-use are protected\n中文翻译：保护使用中数据的机密性、完整性和可用性。",
+      "text_type": "original",
+      "summary": "对处于处理与使用状态的数据实施保护，如内存保护、数据脱敏与运行时防护，防止处理环节泄露。",
+      "keywords": [
+        "使用中数据",
+        "内存保护",
+        "数据脱敏",
+        "运行时保护",
+        "屏幕被人拍照"
+      ],
+      "risk_tags": [
+        "data_security",
+        "encryption"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.DS-10"
+    },
+    {
+      "clause_id": "PR.DS-11",
+      "title": "数据备份与恢复验证",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "数据安全 (PR.DS)"
+      ],
+      "text": "英文原文：Backups of data are created, protected, maintained, and tested\n中文翻译：创建、保护、维护并测试数据备份。",
+      "text_type": "original",
+      "summary": "定期创建并保护数据备份，同时实际演练恢复，确保备份在需要时真正可用。",
+      "keywords": [
+        "数据备份",
+        "备份恢复",
+        "异地备份",
+        "备份测试",
+        "没做备份"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.DS-11"
+    },
+    {
+      "clause_id": "PR.PS-01",
+      "title": "配置管理",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Configuration management practices are established and applied\n中文翻译：建立并应用配置管理实践。",
+      "text_type": "original",
+      "summary": "建立配置管理规范与安全基线，统一加固标准，避免默认口令和不安全配置长期存在。",
+      "keywords": [
+        "配置管理",
+        "安全基线",
+        "加固",
+        "默认密码",
+        "服务器默认配置没改"
+      ],
+      "risk_tags": [
+        "app_security",
+        "vulnerability"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-01"
+    },
+    {
+      "clause_id": "PR.PS-02",
+      "title": "软件维护与淘汰",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Software is maintained, replaced, and removed commensurate with risk\n中文翻译：按照风险程度对软件进行维护、替换和移除。",
+      "text_type": "original",
+      "summary": "按风险程度及时更新补丁、替换过时软件并停用不再支持的产品，降低已知漏洞被利用的风险。",
+      "keywords": [
+        "补丁更新",
+        "软件升级",
+        "停服软件",
+        "版本管理",
+        "系统太老不升级"
+      ],
+      "risk_tags": [
+        "vulnerability",
+        "asset_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-02"
+    },
+    {
+      "clause_id": "PR.PS-03",
+      "title": "硬件维护与淘汰",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Hardware is maintained, replaced, and removed commensurate with risk\n中文翻译：按照风险程度对硬件进行维护、替换和移除。",
+      "text_type": "original",
+      "summary": "按风险程度对硬件进行维护、更换和退役处理，避免超期服役设备成为安全短板。",
+      "keywords": [
+        "硬件维保",
+        "设备更换",
+        "报废处理",
+        "超期服役",
+        "老服务器还在跑"
+      ],
+      "risk_tags": [
+        "asset_mgmt",
+        "physical"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-03"
+    },
+    {
+      "clause_id": "PR.PS-04",
+      "title": "日志生成与可用性",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Log records are generated and made available for continuous monitoring\n中文翻译：生成日志记录并使其可用于持续监测。",
+      "text_type": "original",
+      "summary": "开启并集中留存关键系统日志，保证日志完整可用，为监测与事后追溯提供依据。",
+      "keywords": [
+        "日志留存",
+        "审计日志",
+        "日志收集",
+        "操作日志",
+        "出事没有日志"
+      ],
+      "risk_tags": [
+        "audit_log",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-04"
+    },
+    {
+      "clause_id": "PR.PS-05",
+      "title": "禁止未授权软件",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Installation and execution of unauthorized software are prevented\n中文翻译：防止未经授权软件的安装与执行。",
+      "text_type": "original",
+      "summary": "通过白名单或终端管控手段限制软件安装与运行，防止员工私装软件带来病毒与合规风险。",
+      "keywords": [
+        "软件白名单",
+        "禁止私装软件",
+        "终端管控",
+        "盗版软件",
+        "员工自己装软件"
+      ],
+      "risk_tags": [
+        "app_security",
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-05"
+    },
+    {
+      "clause_id": "PR.PS-06",
+      "title": "安全开发实践",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "平台安全 (PR.PS)"
+      ],
+      "text": "英文原文：Secure software development practices are integrated, and their performance is monitored throughout the software development life cycle\n中文翻译：集成安全软件开发实践，并在软件开发生命周期内监测其执行情况。",
+      "text_type": "original",
+      "summary": "在需求、设计、编码、测试到上线的各阶段融入安全开发实践，并监督其落实情况。",
+      "keywords": [
+        "安全开发",
+        "SDL",
+        "代码审计",
+        "上线前测试",
+        "开发不管安全"
+      ],
+      "risk_tags": [
+        "app_security"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.PS-06"
+    },
+    {
+      "clause_id": "PR.IR-01",
+      "title": "网络逻辑访问防护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "技术基础设施韧性 (PR.IR)"
+      ],
+      "text": "英文原文：Networks and environments are protected from unauthorized logical access and usage\n中文翻译：保护网络与环境免受未经授权的逻辑访问和使用。",
+      "text_type": "original",
+      "summary": "通过网络分区、防火墙与访问策略限制未授权的逻辑访问，防止攻击者在内网横向移动。",
+      "keywords": [
+        "网络隔离",
+        "防火墙",
+        "边界防护",
+        "VLAN划分",
+        "内网随便连"
+      ],
+      "risk_tags": [
+        "network_security",
+        "access_control"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.IR-01"
+    },
+    {
+      "clause_id": "PR.IR-02",
+      "title": "环境威胁防护",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "技术基础设施韧性 (PR.IR)"
+      ],
+      "text": "英文原文：The organization’s technology assets are protected from environmental threats\n中文翻译：保护组织的技术资产免受环境威胁。",
+      "text_type": "original",
+      "summary": "通过机房环境控制、消防防水与供电保障等措施，保护技术资产免受环境灾害影响。",
+      "keywords": [
+        "机房环境",
+        "温湿度",
+        "防水防火",
+        "UPS",
+        "机房漏水停电"
+      ],
+      "risk_tags": [
+        "physical"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.IR-02"
+    },
+    {
+      "clause_id": "PR.IR-03",
+      "title": "韧性机制建设",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "技术基础设施韧性 (PR.IR)"
+      ],
+      "text": "英文原文：Mechanisms are implemented to achieve resilience requirements in normal and adverse situations\n中文翻译：实施相关机制，以在正常和不利情况下满足韧性要求。",
+      "text_type": "original",
+      "summary": "通过冗余、备份、容灾切换等机制，使关键系统在正常与异常情况下都能满足韧性要求。",
+      "keywords": [
+        "冗余",
+        "双机热备",
+        "容灾",
+        "高可用",
+        "单点故障"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "network_security"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.IR-03"
+    },
+    {
+      "clause_id": "PR.IR-04",
+      "title": "资源容量保障",
+      "chapter_path": [
+        "保护 (PROTECT, PR)",
+        "技术基础设施韧性 (PR.IR)"
+      ],
+      "text": "英文原文：Adequate resource capacity to ensure availability is maintained\n中文翻译：维持充足的资源容量以确保可用性。",
+      "text_type": "original",
+      "summary": "持续监控并规划计算、存储与带宽容量，避免因资源耗尽导致服务中断。",
+      "keywords": [
+        "容量规划",
+        "带宽扩容",
+        "存储容量",
+        "性能瓶颈",
+        "系统卡死崩溃"
+      ],
+      "risk_tags": [
+        "network_security",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "PR.IR-04"
+    },
+    {
+      "clause_id": "DE.CM-01",
+      "title": "网络监测",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "持续监测 (DE.CM)"
+      ],
+      "text": "英文原文：Networks and network services are monitored to find potentially adverse events\n中文翻译：监测网络和网络服务，以发现潜在的不利事件。",
+      "text_type": "original",
+      "summary": "对网络流量与网络服务开展持续监测，及时发现异常连接、入侵迹象与可疑通信。",
+      "keywords": [
+        "网络监控",
+        "流量监测",
+        "入侵检测",
+        "IDS",
+        "内网被入侵不知道"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "network_security"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.CM-01"
+    },
+    {
+      "clause_id": "DE.CM-02",
+      "title": "物理环境监测",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "持续监测 (DE.CM)"
+      ],
+      "text": "英文原文：The physical environment is monitored to find potentially adverse events\n中文翻译：监测物理环境，以发现潜在的不利事件。",
+      "text_type": "original",
+      "summary": "对机房与办公场所的物理环境实施监控，及时发现未授权进入与环境异常。",
+      "keywords": [
+        "视频监控",
+        "环境监控",
+        "门禁记录",
+        "机房监控",
+        "有人进机房吗"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "physical"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.CM-02"
+    },
+    {
+      "clause_id": "DE.CM-03",
+      "title": "人员与技术使用监测",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "持续监测 (DE.CM)"
+      ],
+      "text": "英文原文：Personnel activity and technology usage are monitored to find potentially adverse events\n中文翻译：监测人员活动与技术使用情况，以发现潜在的不利事件。",
+      "text_type": "original",
+      "summary": "对人员操作行为与技术资源使用情况进行监测，及时发现批量下载、异常登录等风险行为。",
+      "keywords": [
+        "员工行为监控",
+        "终端审计",
+        "异常操作",
+        "UEBA",
+        "员工批量下载数据"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "audit_log",
+        "personal_info"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.CM-03"
+    },
+    {
+      "clause_id": "DE.CM-06",
+      "title": "外部服务商监测",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "持续监测 (DE.CM)"
+      ],
+      "text": "英文原文：External service provider activities and services are monitored to find potentially adverse events\n中文翻译：监测外部服务提供商的活动与服务，以发现潜在的不利事件。",
+      "text_type": "original",
+      "summary": "持续监测外部服务商的活动与服务状态，及时发现第三方侧的异常与安全事件。",
+      "keywords": [
+        "外包监控",
+        "第三方服务监测",
+        "云服务监控",
+        "供应商行为",
+        "外包乱动数据"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "supply_chain"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.CM-06"
+    },
+    {
+      "clause_id": "DE.CM-09",
+      "title": "主机与运行时监测",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "持续监测 (DE.CM)"
+      ],
+      "text": "英文原文：Computing hardware and software, runtime environments, and their data are monitored to find potentially adverse events\n中文翻译：监测计算硬件与软件、运行时环境及其数据，以发现潜在的不利事件。",
+      "text_type": "original",
+      "summary": "对服务器、终端及其运行时环境与数据实施监测，及时发现恶意程序与异常进程。",
+      "keywords": [
+        "主机监控",
+        "EDR",
+        "恶意软件检测",
+        "杀毒软件",
+        "电脑中病毒"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "vulnerability"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.CM-09"
+    },
+    {
+      "clause_id": "DE.AE-02",
+      "title": "不利事件分析",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：Potentially adverse events are analyzed to better understand associated activities\n中文翻译：分析潜在的不利事件，以更好地理解相关活动。",
+      "text_type": "original",
+      "summary": "对告警与异常进行深入分析，弄清事件相关的活动过程，判断是否构成真实威胁。",
+      "keywords": [
+        "事件分析",
+        "告警分析",
+        "日志分析",
+        "异常排查",
+        "报警了看不懂"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-02"
+    },
+    {
+      "clause_id": "DE.AE-03",
+      "title": "多源信息关联",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：Information is correlated from multiple sources\n中文翻译：对来自多个来源的信息进行关联分析。",
+      "text_type": "original",
+      "summary": "把网络、主机、应用与账号等多来源日志关联分析，提升告警准确性与事件发现能力。",
+      "keywords": [
+        "日志关联",
+        "SIEM",
+        "集中分析",
+        "多源数据",
+        "报警太散看不过来"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "audit_log"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-03"
+    },
+    {
+      "clause_id": "DE.AE-04",
+      "title": "事件影响与范围研判",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：The estimated impact and scope of adverse events are understood\n中文翻译：理解不利事件的预估影响与范围。",
+      "text_type": "original",
+      "summary": "快速研判不利事件可能造成的影响与波及范围，为处置决策和上报提供依据。",
+      "keywords": [
+        "影响范围",
+        "波及面",
+        "损失评估",
+        "影响多少客户",
+        "影响了多少台机器"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-04"
+    },
+    {
+      "clause_id": "DE.AE-06",
+      "title": "事件信息通报",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：Information on adverse events is provided to authorized staff and tools\n中文翻译：将不利事件的信息提供给经授权的人员和工具。",
+      "text_type": "original",
+      "summary": "把不利事件的信息及时推送给经授权的人员与系统工具，确保处置力量第一时间获知。",
+      "keywords": [
+        "告警通知",
+        "事件上报",
+        "值班通知",
+        "信息同步",
+        "出事了没人知道"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-06"
+    },
+    {
+      "clause_id": "DE.AE-07",
+      "title": "威胁情报融入事件分析",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：Cyber threat intelligence and other contextual information are integrated into the analysis\n中文翻译：将网络威胁情报及其他上下文信息纳入分析。",
+      "text_type": "original",
+      "summary": "在事件分析中引入威胁情报与资产上下文，判断攻击手法归属并提升研判准确性。",
+      "keywords": [
+        "威胁情报分析",
+        "上下文",
+        "攻击手法匹配",
+        "情报比对",
+        "这是不是已知攻击"
+      ],
+      "risk_tags": [
+        "monitoring",
+        "risk_mgmt"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-07"
+    },
+    {
+      "clause_id": "DE.AE-08",
+      "title": "事件判定与宣告",
+      "chapter_path": [
+        "检测 (DETECT, DE)",
+        "不利事件分析 (DE.AE)"
+      ],
+      "text": "英文原文：Incidents are declared when adverse events meet the defined incident criteria\n中文翻译：当不利事件满足既定的事件判定标准时，宣布构成事件。",
+      "text_type": "original",
+      "summary": "预先定义事件判定标准，一旦不利事件达到标准即正式宣告为安全事件并启动响应。",
+      "keywords": [
+        "事件定级",
+        "事件判定标准",
+        "宣布进入应急",
+        "算不算安全事件"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "DE.AE-08"
+    },
+    {
+      "clause_id": "RS.MA-01",
+      "title": "事件响应计划执行",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件管理 (RS.MA)"
+      ],
+      "text": "英文原文：The incident response plan is executed in coordination with relevant third parties once an incident is declared\n中文翻译：一旦宣布事件，与相关第三方协同执行事件响应计划。",
+      "text_type": "original",
+      "summary": "事件宣告后立即按预案组织处置，并与云服务商、外包厂商等相关第三方协同行动。",
+      "keywords": [
+        "应急响应",
+        "响应流程",
+        "预案启动",
+        "联合处置",
+        "出事了手忙脚乱"
+      ],
+      "risk_tags": [
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MA-01"
+    },
+    {
+      "clause_id": "RS.MA-02",
+      "title": "事件报告分诊与验证",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件管理 (RS.MA)"
+      ],
+      "text": "英文原文：Incident reports are triaged and validated\n中文翻译：对事件报告进行分诊（分级分类）与验证。",
+      "text_type": "original",
+      "summary": "对收到的告警与事件报告先做核实与分诊，排除误报并确定处置次序。",
+      "keywords": [
+        "事件分级",
+        "报警核实",
+        "误报排除",
+        "分诊",
+        "报警是不是真的"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "monitoring"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MA-02"
+    },
+    {
+      "clause_id": "RS.MA-03",
+      "title": "事件分类与优先级",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件管理 (RS.MA)"
+      ],
+      "text": "英文原文：Incidents are categorized and prioritized\n中文翻译：对事件进行分类与优先级排序。",
+      "text_type": "original",
+      "summary": "按类型与严重程度对事件分类定级，明确处置优先级与响应时限。",
+      "keywords": [
+        "事件分类",
+        "优先级排序",
+        "严重程度",
+        "定级标准",
+        "哪个先处理"
+      ],
+      "risk_tags": [
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MA-03"
+    },
+    {
+      "clause_id": "RS.MA-04",
+      "title": "事件上报与升级",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件管理 (RS.MA)"
+      ],
+      "text": "英文原文：Incidents are escalated or elevated as needed\n中文翻译：按需对事件进行上报或升级。",
+      "text_type": "original",
+      "summary": "按事件严重程度触发通报与升级机制，必要时上报管理层、监管机构或执法部门。",
+      "keywords": [
+        "升级上报",
+        "越级汇报",
+        "通知老板",
+        "上报监管",
+        "大事要赶紧报"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MA-04"
+    },
+    {
+      "clause_id": "RS.MA-05",
+      "title": "启动恢复的判定标准",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件管理 (RS.MA)"
+      ],
+      "text": "英文原文：The criteria for initiating incident recovery are applied\n中文翻译：应用启动事件恢复的判定标准。",
+      "text_type": "original",
+      "summary": "制定并执行从响应阶段转入恢复阶段的判定标准，确保在受控条件下启动恢复。",
+      "keywords": [
+        "恢复启动条件",
+        "何时恢复",
+        "转入恢复阶段",
+        "确认可以恢复了"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "backup_recovery"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MA-05"
+    },
+    {
+      "clause_id": "RS.AN-03",
+      "title": "事件根因分析",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件分析 (RS.AN)"
+      ],
+      "text": "英文原文：Analysis is performed to establish what has taken place during an incident and the root cause of the incident\n中文翻译：开展分析以确定事件期间发生了什么以及事件的根本原因。",
+      "text_type": "original",
+      "summary": "通过取证与溯源分析还原事件经过并查明根本原因，避免同类问题再次发生。",
+      "keywords": [
+        "根因分析",
+        "溯源",
+        "取证分析",
+        "怎么被攻破的",
+        "漏洞从哪进来的"
+      ],
+      "risk_tags": [
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.AN-03"
+    },
+    {
+      "clause_id": "RS.AN-06",
+      "title": "调查过程记录与保全",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件分析 (RS.AN)"
+      ],
+      "text": "英文原文：Actions performed during an investigation are recorded, and the records’ integrity and provenance are preserved\n中文翻译：记录调查期间执行的操作，并保全记录的完整性与来源可追溯性。",
+      "text_type": "original",
+      "summary": "完整记录调查期间执行的每一步操作，并保证记录真实完整、来源可追溯，以备举证。",
+      "keywords": [
+        "调查记录",
+        "取证留痕",
+        "证据保全",
+        "操作留痕",
+        "证据别弄丢了"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "audit_log"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.AN-06"
+    },
+    {
+      "clause_id": "RS.AN-07",
+      "title": "事件数据与元数据收集",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件分析 (RS.AN)"
+      ],
+      "text": "英文原文：Incident data and metadata are collected, and their integrity and provenance are preserved\n中文翻译：收集事件数据及其元数据，并保全其完整性与来源可追溯性。",
+      "text_type": "original",
+      "summary": "及时收集并固定事件相关数据与元数据，保证证据链完整，防止日志被覆盖丢失。",
+      "keywords": [
+        "数据取证",
+        "元数据",
+        "日志固定",
+        "证据链",
+        "日志被覆盖了"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "audit_log",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.AN-07"
+    },
+    {
+      "clause_id": "RS.AN-08",
+      "title": "事件规模评估",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件分析 (RS.AN)"
+      ],
+      "text": "英文原文：An incident’s magnitude is estimated and validated\n中文翻译：估计并验证事件的规模。",
+      "text_type": "original",
+      "summary": "评估并核实事件的实际规模与受损程度，据此调整处置力度与对外通报口径。",
+      "keywords": [
+        "事件规模",
+        "受损范围",
+        "影响面核实",
+        "损失核定",
+        "到底多大篓子"
+      ],
+      "risk_tags": [
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.AN-08"
+    },
+    {
+      "clause_id": "RS.CO-02",
+      "title": "事件通知",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件响应报告与沟通 (RS.CO)"
+      ],
+      "text": "英文原文：Internal and external stakeholders are notified of incidents\n中文翻译：将事件通知内部与外部利益相关方。",
+      "text_type": "original",
+      "summary": "按法规与合同要求，及时通知内部管理层以及客户、监管机构等外部相关方。",
+      "keywords": [
+        "事件通报",
+        "客户告知",
+        "监管报告",
+        "通知用户",
+        "要不要告诉客户"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.CO-02"
+    },
+    {
+      "clause_id": "RS.CO-03",
+      "title": "事件信息共享",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件响应报告与沟通 (RS.CO)"
+      ],
+      "text": "英文原文：Information is shared with designated internal and external stakeholders\n中文翻译：与指定的内部和外部利益相关方共享信息。",
+      "text_type": "original",
+      "summary": "按照既定范围与统一口径，与指定的内外部相关方共享事件信息，避免口径混乱。",
+      "keywords": [
+        "信息共享",
+        "情报通报",
+        "对外沟通口径",
+        "协同通报",
+        "该说什么不该说什么"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.CO-03"
+    },
+    {
+      "clause_id": "RS.MI-01",
+      "title": "事件遏制",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件缓解 (RS.MI)"
+      ],
+      "text": "英文原文：Incidents are contained\n中文翻译：对事件进行遏制（隔离控制）。",
+      "text_type": "original",
+      "summary": "通过隔离受感染主机、切断网络连接、下线服务等手段遏制事件扩散，控制影响范围。",
+      "keywords": [
+        "隔离止损",
+        "断网隔离",
+        "遏制扩散",
+        "紧急下线",
+        "先把网线拔了"
+      ],
+      "risk_tags": [
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MI-01"
+    },
+    {
+      "clause_id": "RS.MI-02",
+      "title": "事件根除",
+      "chapter_path": [
+        "响应 (RESPOND, RS)",
+        "事件缓解 (RS.MI)"
+      ],
+      "text": "英文原文：Incidents are eradicated\n中文翻译：对事件进行根除。",
+      "text_type": "original",
+      "summary": "清除恶意程序、修补被利用的漏洞并消除后门，确保威胁被彻底根除后方可恢复业务。",
+      "keywords": [
+        "清除病毒",
+        "根除威胁",
+        "修补漏洞",
+        "重装系统",
+        "把木马清干净"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "vulnerability"
+      ],
+      "level_scope": [],
+      "sort_key": "RS.MI-02"
+    },
+    {
+      "clause_id": "RC.RP-01",
+      "title": "恢复计划执行",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：The recovery portion of the incident response plan is executed once initiated from the incident response process\n中文翻译：一旦由事件响应流程启动，即执行事件响应计划中的恢复部分。",
+      "text_type": "original",
+      "summary": "响应流程决定启动恢复后，按预案中的恢复部分组织人员与资源开展系统与业务恢复。",
+      "keywords": [
+        "恢复计划",
+        "业务恢复",
+        "恢复流程",
+        "灾备切换",
+        "系统什么时候能好"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-01"
+    },
+    {
+      "clause_id": "RC.RP-02",
+      "title": "恢复动作的选择与排序",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：Recovery actions are selected, scoped, prioritized, and performed\n中文翻译：选择、界定范围、排序并执行恢复动作。",
+      "text_type": "original",
+      "summary": "根据业务重要程度选择恢复动作、确定恢复范围并排定顺序，优先恢复关键业务。",
+      "keywords": [
+        "恢复顺序",
+        "先恢复哪个系统",
+        "恢复范围",
+        "业务优先级",
+        "先救核心业务"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "incident_response"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-02"
+    },
+    {
+      "clause_id": "RC.RP-03",
+      "title": "恢复前备份完整性验证",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：The integrity of backups and other restoration assets is verified before using them for restoration\n中文翻译：在使用备份及其他恢复资产进行恢复之前，验证其完整性。",
+      "text_type": "original",
+      "summary": "在正式恢复前验证备份数据的完整性与可用性，避免用损坏备份覆盖好数据导致二次损失。",
+      "keywords": [
+        "备份可用性",
+        "备份验证",
+        "恢复演练",
+        "备份损坏",
+        "备份根本恢复不了"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-03"
+    },
+    {
+      "clause_id": "RC.RP-04",
+      "title": "事件后运营常态确立",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：Critical mission functions and cybersecurity risk management are considered to establish post-incident operational norms\n中文翻译：在确立事件后运营常态时，考虑关键使命职能与网络安全风险管理。",
+      "text_type": "original",
+      "summary": "恢复过程中结合关键业务需要与安全风险，确定事件后新的运行基线与常态运营方式。",
+      "keywords": [
+        "恢复后常态",
+        "运行基线",
+        "加固后上线",
+        "恢复正常运营"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-04"
+    },
+    {
+      "clause_id": "RC.RP-05",
+      "title": "恢复验证与状态确认",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：The integrity of restored assets is verified, systems and services are restored, and normal operating status is confirmed\n中文翻译：验证已恢复资产的完整性，恢复系统与服务，并确认正常运行状态。",
+      "text_type": "original",
+      "summary": "恢复后验证数据与系统的完整性，确认业务功能与运行状态正常后方可宣布恢复完成。",
+      "keywords": [
+        "恢复验证",
+        "系统回来了吗",
+        "服务恢复确认",
+        "数据一致性",
+        "恢复了但数据不对"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "data_security"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-05"
+    },
+    {
+      "clause_id": "RC.RP-06",
+      "title": "宣布恢复结束与归档",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复计划执行 (RC.RP)"
+      ],
+      "text": "英文原文：The end of incident recovery is declared based on criteria, and incident-related documentation is completed\n中文翻译：依据判定标准宣布事件恢复结束，并完成与事件相关的文档记录。",
+      "text_type": "original",
+      "summary": "按标准确认恢复完成后正式宣布恢复结束，并补齐事件记录、复盘报告与整改台账。",
+      "keywords": [
+        "恢复结束",
+        "事件结案",
+        "复盘报告",
+        "归档",
+        "事后总结"
+      ],
+      "risk_tags": [
+        "backup_recovery",
+        "incident_response",
+        "audit_log"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.RP-06"
+    },
+    {
+      "clause_id": "RC.CO-03",
+      "title": "恢复进展沟通",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复沟通 (RC.CO)"
+      ],
+      "text": "英文原文：Recovery activities and progress in restoring operational capabilities are communicated to designated internal and external stakeholders\n中文翻译：向指定的内部和外部利益相关方沟通恢复活动及运营能力恢复进展。",
+      "text_type": "original",
+      "summary": "持续向管理层、客户等指定相关方通报恢复进展与预计时间，稳定各方预期。",
+      "keywords": [
+        "恢复进展通报",
+        "进度同步",
+        "客户沟通",
+        "恢复情况汇报",
+        "什么时候恢复要告诉客户"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.CO-03"
+    },
+    {
+      "clause_id": "RC.CO-04",
+      "title": "对外公开信息发布",
+      "chapter_path": [
+        "恢复 (RECOVER, RC)",
+        "事件恢复沟通 (RC.CO)"
+      ],
+      "text": "英文原文：Public updates on incident recovery are shared using approved methods and messaging\n中文翻译：使用经批准的方式和口径对外发布事件恢复的公开信息。",
+      "text_type": "original",
+      "summary": "对外发布恢复相关信息时使用经审批的渠道与统一口径，兼顾透明度与声誉风险。",
+      "keywords": [
+        "对外公告",
+        "统一口径",
+        "公关声明",
+        "舆情应对",
+        "对外怎么说"
+      ],
+      "risk_tags": [
+        "incident_response",
+        "governance"
+      ],
+      "level_scope": [],
+      "sort_key": "RC.CO-04"
+    }
+  ]
+}

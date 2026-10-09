@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="light">
+<title>安全合规自查助手</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ==========================================================================
+     图标雪碧图：全站线性图标集中放这里。
+     刻意不引任何在线图标库（lucide CDN 之类）——本工具要求完全离线可用，
+     断网时外部资源会让界面直接缺图标。
+     ========================================================================== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+    <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7z"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+    <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+    <symbol id="i-clipboard" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></symbol>
+    <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></symbol>
+    <symbol id="i-idcard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><circle cx="8.5" cy="11" r="2"/><path d="M5 17c0-1.66 1.57-3 3.5-3s3.5 1.34 3.5 3"/><path d="M14.5 10H19M14.5 14H17"/></symbol>
+    <symbol id="i-bug" viewBox="0 0 24 24"><path d="m8 2 1.5 2M16 2l-1.5 2"/><rect x="7" y="6" width="10" height="12" rx="5"/><path d="M3 10h4M17 10h4M3 16h4M17 16h4M12 18v4"/></symbol>
+    <symbol id="i-building" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="1.5"/><path d="M9 7.5h.01M15 7.5h.01M9 11.5h.01M15 11.5h.01M9 15.5h.01M15 15.5h.01"/><path d="M10 21v-3h4v3"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+    <symbol id="i-filetext" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h6"/></symbol>
+    <symbol id="i-external" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.35-4.35"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5"/><path d="M12 3v13"/></symbol>
+    <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v6h-6"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 16v-5M12 8h.01"/></symbol>
+  </defs>
+</svg>
+
+<a class="skip-link" href="#chatScroll">跳到对话内容</a>
+
+<!-- 启动遮罩：知识库首次建索引可能要等一会儿 -->
+<div class="overlay" id="overlay" role="alertdialog" aria-label="正在启动" aria-busy="true">
+  <div class="ov-logo"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg></div>
+  <div class="ov-title">安全合规自查助手</div>
+  <div class="ov-msg" id="ovMsg">正在启动…</div>
+  <div class="ov-bar"><div class="ov-bar-fill indeterminate" id="ovBar"></div></div>
+  <div class="ov-tip" id="ovTip">
+    首次启动需要导入知识库并建立索引，大约需要半分钟。<br>
+    本工具完全在本机运行，您的描述不会上传到任何服务器。
+  </div>
+</div>
+
+<!-- 顶栏 -->
+<header class="topbar">
+  <button class="icon-btn" id="navToggle" type="button" aria-label="打开历史对话" aria-expanded="false" aria-controls="sidebar">
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-menu"/></svg>
+  </button>
+
+  <div class="logo">
+    <span class="shield"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-shield"/></svg></span>
+    <span class="wordmark">安全合规自查助手</span>
+  </div>
+
+  <nav aria-label="主导航">
+    <a href="/" class="active" aria-current="page">对话自查</a>
+    <a href="/kb">知识库</a>
+  </nav>
+
+  <div class="spacer"></div>
+  <div class="status-chip" id="statusChip" title="本地大模型状态" role="status">正在检查环境…</div>
+</header>
+
+<div class="layout">
+  <!-- 左侧会话列表（窄屏时收成抽屉） -->
+  <aside class="sidebar" id="sidebar" aria-label="历史对话">
+    <button class="btn-new" id="btnNew" type="button">
+      <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-plus"/></svg>
+      新建对话
+    </button>
+
+    <div class="sidebar-label" id="sessionListLabel">历史对话</div>
+    <div class="session-list" id="sessionList" role="list" aria-labelledby="sessionListLabel"></div>
+
+    <div class="sidebar-foot">
+      数据全部保存在本机。<br>
+      仅用于辅助自查，不构成正式测评结论。
+    </div>
+  </aside>
+
+  <div class="nav-scrim" id="navScrim" aria-hidden="true"></div>
+
+  <!-- 主聊天区 -->
+  <main class="main" id="main">
+    <!-- 页面标题：下面那个可见大标题属于空状态，一开始对话就没了；
+         正在进行的对话又没有稳定标题可用。所以给屏幕阅读器一个不会消失的页面名，
+         顺便满足"每页要有且只有一个 h1"。必须放在 <main> 里——放在 body 下
+         会被 axe 的 region 规则判成"内容不在任何地标区域内"。 -->
+    <h1 class="sr-only">对话自查</h1>
+
+    <div class="chat-scroll" id="chatScroll" role="log" aria-label="对话内容">
+      <!-- 空状态只写在这里一份：JS 用完之后是摘下来而不是删掉，切回新对话时原样放回去。
+           同一个界面在 HTML 和 JS 里各写一遍迟早会漂移成两个不同的样子。 -->
+      <div class="empty-state" id="emptyState">
+        <h2>用大白话描述您的系统情况，我来找对应的合规条款</h2>
+        <p>回答会给出具体条款编号和依据，涉及数据加密、访问控制、个人信息保护时会用
+          <svg class="i i-warn" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-alert"/></svg>
+          标注</p>
+        <div class="quick-grid" id="quickGrid"></div>
+      </div>
+    </div>
+
+    <div class="composer-wrap">
+      <div class="composer">
+        <label class="sr-only" for="input">描述您的系统情况</label>
+        <textarea id="input" rows="1" placeholder="例如：我们公司十几个人共用一套进销存系统的管理员账号，员工离职后账号也没停用……"></textarea>
+        <button class="btn-send" id="btnSend" type="button">
+          <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-send"/></svg>
+          发送
+        </button>
+      </div>
+      <div class="composer-hint">
+        <span>Enter 发送 · Shift+Enter 换行</span>
+        <span id="hintRight"></span>
+      </div>
+    </div>
+
+    <div class="disclaimer-bar">
+      本工具用于辅助自查，依据等保2.0（GB/T 22239-2019）安全通用要求、NIST CSF 2.0、OWASP Top 10 2021，不构成正式测评结论。
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script src="/static/js/api.js"></script>
+<script src="/static/js/chat.js"></script>
+</body>
+</html>

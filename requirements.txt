@@ -1,0 +1,20 @@
+# 安全合规自查助手 - 依赖清单
+# 安装：.venv\Scripts\python.exe -m pip install -r requirements.txt
+
+# --- Web 服务 ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# --- 配置 / 数据 ---
+pydantic>=2.9.0
+python-dotenv>=1.0.1
+
+# --- 检索：中文分词 + 语义向量 ---
+jieba>=0.42.1
+numpy>=2.0.0
+fastembed>=0.4.1
+
+# --- 文档导入（后续步骤用） ---
+pypdf>=5.1.0
+python-docx>=1.1.2
