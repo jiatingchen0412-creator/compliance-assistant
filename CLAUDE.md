@@ -73,6 +73,9 @@
 - 页面能不能用 → `tests/test_frontend.py` 用真 Chrome 兜底
 - 中文写进 `.bat` → `check_syntax.py` 的 `check_bat_ascii()` 拦截
   （cmd 按代码页逐字节读批处理，中文会让它完全无法执行，双击毫无反应）
+- 独立脚本打印中文 → `check_syntax.py` 的 `check_console_encoding()` 拦截
+  （不 `import app` 的脚本拿不到 `app/console.py` 的自动修正，
+  在英文 Windows 的 cp1252 代码页下打印中文会直接崩掉进程）
 
 ### 三、测试不许依赖外部服务是否在线
 
@@ -157,7 +160,8 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 | 坑 | 症状 | 修法 |
 |---|---|---|
 | 系统代理 | 本地 Ollama 请求被送去 `127.0.0.1:7897`，静默降级 | `httpx` 客户端加 `trust_env=False`；测试就绪探针用 `http.client` |
-| GBK 控制台 | 输出被重定向时打印 ⚠️/✅ 直接抛 `UnicodeEncodeError` 终结进程 | `import app.console`（`app/__init__.py` 已自动导入） |
+| GBK / cp1252 控制台 | 输出被重定向时打印 ⚠️/✅/中文直接抛 `UnicodeEncodeError` 终结进程 | `import app.console`（`app/__init__.py` 已自动导入）；**不 import app 的独立脚本要自己 `reconfigure(encoding="utf-8")`**，`check_console_encoding()` 会强制 |
+| 编码坑在本地复现不了 | 本机代码页是 GBK，中文编得出来；CI 的 windows runner 是 cp1252，才崩 | `$env:PYTHONIOENCODING = "cp1252"` 再跑一遍脚本即可复现 |
 | `.bat` 中文 | 双击毫无反应，cmd 报 `'xxx' is not recognized` | `.bat` 只写纯 ASCII |
 | 就绪探针猛试 | 服务还没 accept 就连，卡死 50 秒以上 | 先 `sleep(3)` 再探，timeout 放宽到 60 秒 |
 | `chrome --screenshot` | `--virtual-time-budget` 不吃网络请求，反复截到空状态 | 用 `tools/cdp_eval.js --screenshot`（真实时间等待） |

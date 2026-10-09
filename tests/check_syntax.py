@@ -20,6 +20,18 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows 上标准输出被重定向（管道、写文件、CI 抓取）时，Python 按控制台代码页编码。
+# 开发机是 GBK，中文编得出来，所以这个坑在本机一直看不见；
+# GitHub 的英文 Windows runner 是 cp1252，打印中文直接 UnicodeEncodeError 把脚本打死
+# ——CI 第一次跑就抓到了。
+# 这里不能 `import app.console`（app/__init__.py 会自动修好编码），
+# 因为本脚本刻意只依赖标准库，要能在装依赖之前先跑。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parent.parent
 
 SKIP_DIRS = {".venv", "__pycache__", ".git", "node_modules", "models"}
@@ -185,6 +197,70 @@ def check_bat_ascii() -> list[str]:
     return problems
 
 
+def check_console_encoding() -> list[str]:
+    """独立脚本（不 import app 的那些）如果会打印非 ASCII，必须自己把 stdout 切成 UTF-8。
+
+    背景见文件头：Windows 上输出被重定向时按代码页编码，cp1252 编不出中文，
+    脚本会直接抛 UnicodeEncodeError 死掉。`import app.*` 会自动修好
+    （`app/__init__.py` → `app/console.py`），但独立脚本没有这层保护。
+
+    这条规则不是假想的：`tests/check_syntax.py` 自己就中过——
+    本机 GBK 编得出来，所以一直没暴露，CI 的英文 runner 第一次跑就挂了。
+    """
+    problems: list[str] = []
+    guarded: list[str] = []
+    for path in iter_files(".py", "tools", "tests"):
+        text = path.read_text(encoding="utf-8")
+        # import app 即自动生效，不用自己处理
+        if re.search(r"^\s*(?:from|import)\s+app\b", text, re.M):
+            continue
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue                      # 语法问题由 check_python 报，这里不重复
+        if not _prints_non_ascii(tree):
+            continue
+        rel = path.relative_to(ROOT)
+        if _CONSOLE_GUARD.search(text):
+            guarded.append(str(rel))
+        else:
+            problems.append(
+                f"{rel} 会打印非 ASCII，却没把 stdout 切成 UTF-8"
+                f"（在 Windows 英文环境下会直接崩，见 check_syntax.py 文件头）"
+            )
+    print(f"  独立脚本控制台编码：{len(guarded)} 个已加保护")
+    return problems
+
+
+# 认这几种写法都行：reconfigure(encoding="utf-8") / os.environ["PYTHONIOENCODING"]
+_CONSOLE_GUARD = re.compile(
+    r"reconfigure\(\s*encoding\s*=\s*[\"']utf-8|PYTHONIOENCODING"
+)
+
+
+def _prints_non_ascii(tree: ast.AST) -> bool:
+    """有没有往标准输出写非 ASCII 字面量。只看字面量——变量里的中文静态看不出来。"""
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        is_print = isinstance(fn, ast.Name) and fn.id == "print"
+        is_write = (
+            isinstance(fn, ast.Attribute)
+            and fn.attr == "write"
+            and isinstance(fn.value, ast.Attribute)
+            and isinstance(fn.value.value, ast.Name)
+            and fn.value.value.id == "sys"
+        )
+        if not (is_print or is_write):
+            continue
+        for sub in ast.walk(node):
+            if isinstance(sub, ast.Constant) and isinstance(sub.value, str):
+                if any(ord(ch) > 127 for ch in sub.value):
+                    return True
+    return False
+
+
 def main() -> int:
     print("=" * 62)
     print("静态检查 · Python / JavaScript / JSON / bat")
@@ -197,6 +273,7 @@ def main() -> int:
     problems += check_dom_ids()
     problems += check_svg_icons()
     problems += check_bat_ascii()
+    problems += check_console_encoding()
 
     print()
     if problems:

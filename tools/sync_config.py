@@ -19,6 +19,16 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+# 本脚本不 import app，所以拿不到 app/console.py 那层自动的编码修正。
+# 不带这一段的后果：Windows 英文环境（代码页 cp1252）下打印中文直接
+# UnicodeEncodeError 把脚本打死——本机是 GBK 所以一直看不见，
+# 是 CI 的 windows runner 抓出来的。规则见 tools/fix_bat_encoding.py 头部。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 

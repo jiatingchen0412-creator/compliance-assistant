@@ -30,6 +30,17 @@ import argparse
 import sys
 from pathlib import Path
 
+# 本脚本不 import app，所以拿不到 app/console.py 那层自动的编码修正。
+# 不带这一段的后果：Windows 英文环境（代码页 cp1252，CI 的 windows runner 就是）
+# 下打印中文直接 UnicodeEncodeError 把脚本打死。本机是 GBK 所以一直看不见，
+# 是 GitHub Actions 第一次跑抓出来的。
+# tests/check_syntax.py 的 check_console_encoding() 会强制这条规则。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
