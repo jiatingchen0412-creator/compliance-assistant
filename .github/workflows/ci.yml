@@ -1,0 +1,134 @@
+name: CI
+
+# 跑什么：9 个自动化套件（99 个用例）+ 44 题检索质量评测。
+# 都不需要 Ollama——测试里对大模型的调用一律打桩，见 CLAUDE.md 的铁律三。
+#
+# 需要联网的只有一处：fastembed 要下载语义模型（BAAI/bge-small-zh-v1.5，约 95 MB）。
+# 用 actions/cache 缓存 data/models，正常情况下只在缓存过期时下一次。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# 同分支连续推送时取消上一次还没跑完的，省额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: 后端套件（${{ matrix.os }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # 一个平台挂了不要掐掉另一个——两个平台的结果都有用
+      fail-fast: false
+      matrix:
+        # Windows 是本项目的主要目标平台（用户双击 .bat 启动），
+        # 所以两个都跑：ubuntu 快，windows 才是真实环境。
+        os: [ubuntu-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"      # 与开发机 .venv 保持一致
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"          # tests/check_syntax.py 要用 node --check 校验 JS
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 缓存语义模型
+        uses: actions/cache@v4
+        with:
+          path: data/models
+          key: fastembed-${{ runner.os }}-bge-small-zh-v1.5
+
+      - name: 建知识库与检索索引
+        # 全新检出时 data/app.db 不存在，这一步会从 data/seed 导入 283 条种子条款
+        # 并建好全文索引与语义向量。没有这一步，后面所有需要知识库的套件都会失败。
+        env:
+          # 开发机在国内，默认走 hf-mirror.com；GitHub runner 上官方源更快更稳
+          HF_MIRROR: https://huggingface.co
+        run: python tools/build_index.py
+
+      - name: 静态检查（最先跑）
+        run: python tests/check_syntax.py
+
+      - name: 检索与判定质量（44 题，不上大模型）
+        env:
+          HF_MIRROR: https://huggingface.co
+        run: python tests/run_eval.py --no-llm
+
+      - name: 分词与口语映射
+        run: python tests/test_normalize.py
+
+      - name: 问题范围判定
+        run: python tests/test_scope.py
+
+      - name: 风险判定与库外转述清理
+        run: python tests/test_guard.py
+
+      - name: 异常路径
+        run: python tests/test_edge_cases.py
+
+      - name: 导入与撤销
+        run: python tests/test_revert.py
+
+      - name: 流式输出
+        run: python tests/test_streaming.py
+
+      - name: Word 导出
+        run: python tests/test_export.py
+
+  frontend:
+    name: 界面回归（真 Chrome + axe-core）
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 缓存语义模型
+        uses: actions/cache@v4
+        with:
+          path: data/models
+          key: fastembed-${{ runner.os }}-bge-small-zh-v1.5
+
+      - name: 建知识库与检索索引
+        env:
+          HF_MIRROR: https://huggingface.co
+        run: python tools/build_index.py
+
+      - name: 确认 Chrome 可用
+        # ubuntu-latest 的镜像自带 Google Chrome；tools/cdp_eval.js 会去找
+        # /usr/bin/google-chrome。如果哪天镜像不再自带，这一步会立刻暴露出来，
+        # 而不是让前端套件报一个看不懂的错。
+        run: google-chrome --version
+
+      - name: 界面回归测试
+        run: python tests/test_frontend.py

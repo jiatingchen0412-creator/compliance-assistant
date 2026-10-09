@@ -1,5 +1,8 @@
 # 安全合规自查助手
 
+[![CI](https://github.com/jiatingchen0412-creator/compliance-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/jiatingchen0412-creator/compliance-assistant/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 一个装在自己电脑上的小工具：**用大白话描述你的系统情况，它从等保2.0、NIST CSF 2.0、OWASP Top 10 2021 里找出对应的条款回给你**，带条款编号和原文，涉及数据加密、访问控制、个人信息保护时会用 ⚠️ 标出来。
 
 - 完全在本机运行，你的描述不会上传到任何服务器
@@ -40,6 +43,13 @@
 | **根目录 `README.md`** | 怎么用（你正在看的这份） | 第一次使用 |
 | **`docs/`** | **标准规范**：应该做成什么样、为什么这么做 | 想改功能、想了解设计 |
 | **`devlog/`** | **开发日志**：每天做了什么、还剩什么 | 想知道进展、回顾决策 |
+
+另外两份在根目录：
+
+| 文件 | 内容 |
+|---|---|
+| `CHANGELOG.md` | **版本变更记录**：每个版本新增/修复/变更了什么，以及为什么 |
+| `CLAUDE.md` | **给 AI 编码助手（和接手的人）的项目说明**：先读什么、工作循环、三条铁律、指标红线、已知的坑 |
 
 ### docs/ 里的 10 份标准文件
 
@@ -130,6 +140,11 @@ rem 看今天的日志 / 汇总最近 7 天
 `test_frontend.py` 会真的拉起一个临时端口的服务、用本机 Chrome 把页面渲染出来，再跑 axe-core 无障碍扫描，检查：JS 有没有报错、有没有无障碍违规、标题层级、历史对话和目录树能不能用键盘操作、Inter 字体加载了没有、390px 手机上有没有横向溢出、抽屉导航能不能开合。**它有额外前提**：本机要装 Node.js 和 Chrome（缺任何一个会直接判失败并告诉你缺什么，不会假装通过）。测试用的是**数据库的临时副本**，不会动你的历史记录。
 
 > 为什么单独做这一套：之前只验证"HTTP 返回 200"，结果 `web/js/kb.js` 里一个非法 JS 变量名让整个知识库页在浏览器里失效了好久都没被发现。**语法正确 ≠ 页面能用**，所以现在用真浏览器兜底。
+
+**这些测试每次推送都会自动跑一遍**（GitHub Actions，见 `.github/workflows/ci.yml`）：
+在 Windows 和 Linux 上各跑一遍后端 8 个套件，再在 Linux 上用真 Chrome 跑一遍界面套件。
+首页徽章就是它的状态。全新 clone 下来跑 CI 的第一步是 `tools/build_index.py`——
+它会从 `data/seed` 里导入 283 条种子条款并建好索引，所以检出后不需要任何手工准备。
 
 **一键体检**（服务在跑时用）：
 

@@ -5,6 +5,10 @@
 fastapi>=0.115.0
 uvicorn[standard]>=0.32.0
 python-multipart>=0.0.12
+# Ollama 调用、模型下载、健康检查都要它。必须显式声明——
+# 之前它只是 fastembed → huggingface_hub → httpx 的传递依赖，
+# 哪天上游不再依赖它，全新安装就会直接 ImportError。
+httpx>=0.27.0
 
 # --- 配置 / 数据 ---
 pydantic>=2.9.0
