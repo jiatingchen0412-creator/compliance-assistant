@@ -71,6 +71,13 @@ jobs:
           HF_MIRROR: https://huggingface.co
         run: python tests/run_eval.py --no-llm
 
+      - name: 留出集纪律检查（防过拟合）
+        # 跑留出集 31 题，并校验指纹锁、与 dev 集的零重叠、基准棘轮。
+        # 它的意义不是"再跑一遍评测"，而是保证那把没被调过参的尺子还在。
+        env:
+          HF_MIRROR: https://huggingface.co
+        run: python tests/test_eval_discipline.py
+
       - name: 分词与口语映射
         run: python tests/test_normalize.py
 

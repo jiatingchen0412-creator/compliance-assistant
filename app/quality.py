@@ -23,12 +23,16 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from . import config
 
 log = logging.getLogger(__name__)
 
 EVAL_FILE = config.BASE_DIR / "tests" / "eval_questions.json"
+# 留出测试集：与 dev 集共用下面这套评测代码，但用不同的题库文件。
+# 为什么要分两个文件、而不是把新题直接加进 dev 集——见 tests/test_eval_split.py 的模块注释。
+HOLDOUT_FILE = config.BASE_DIR / "tests" / "eval_holdout.json"
 
 # --------------------------------------------------------------------------
 # 指标红线（改这里之前先改 docs/07-测试与验收规范.md）
@@ -54,14 +58,20 @@ EXPECTED_COUNTS = {
 }
 
 
-def load_questions() -> list[dict]:
-    if not EVAL_FILE.exists():
+def load_questions(path=None) -> list[dict]:
+    """读取评测题。省略 path 时读 dev 集（EVAL_FILE）。
+
+    path 可以指向另一个题库文件（例如留出集 eval_holdout.json）——
+    这样 dev 集和留出集走的是同一套评测代码，不会出现"两份评测各自漂移"。
+    """
+    target = Path(path) if path else EVAL_FILE
+    if not target.exists():
         return []
     try:
-        with open(EVAL_FILE, "r", encoding="utf-8") as f:
+        with open(target, "r", encoding="utf-8") as f:
             return json.load(f)["questions"]
     except Exception as exc:
-        log.warning("评测题读取失败：%s", exc)
+        log.warning("评测题读取失败（%s）：%s", target, exc)
         return []
 
 
@@ -87,17 +97,23 @@ def _empty_stats() -> dict:
 # --------------------------------------------------------------------------
 # 第一层：检索与判定（不需要大模型）
 # --------------------------------------------------------------------------
-def evaluate_retrieval(top_k: int = 6) -> dict:
-    """跑一遍检索评测，返回逐题结果和汇总指标。"""
+def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
+                       source: str = "") -> dict:
+    """跑一遍检索评测，返回逐题结果和汇总指标。
+
+    questions 省略时从 EVAL_FILE（dev 集）读；传进来则是另一套题（留出集）。
+    source 只是给报错信息用的一句人话说明。
+    """
     from . import guard, scope
     from .retrieval import get_engine
 
-    questions = load_questions()
+    if questions is None:
+        questions = load_questions()
     if not questions:
         return {
             "rows": [],
             "stats": _empty_stats(),
-            "error": "找不到评测题文件 tests/eval_questions.json",
+            "error": f"找不到评测题文件{('：' + source) if source else ' tests/eval_questions.json'}",
         }
 
     engine = get_engine()

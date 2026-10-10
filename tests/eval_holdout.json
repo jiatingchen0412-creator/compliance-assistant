@@ -1,0 +1,240 @@
+{
+  "_说明": "留出测试集（holdout）——用来量『换一批没调过参的题还灵不灵』，防的是过拟合。与 eval_questions.json（dev 集）的关系：dev 集可以随便改（改检索参数、改提示词时就该改它），留出集默认冻结，只有『评审节点』才允许跑一次，跑完记分再冻结。",
+  "_为什么要有这个文件": [
+    "dev 集 44 题既当训练集又当验收集，阈值 0.40、关键词/语义 0.5:0.5、COLLOQUIAL_MAP 都是照着它调出来的，所以它天然测不出『调过头了』。",
+    "留出集全部取自 dev 集从未引用过的条款（跑 `tools/eval_coverage.py` 可以复算：283 条里 dev 集覆盖 203 条、剩 80 条）。考点与问法都不与 dev 集重叠——这一点由 tests/test_eval_discipline.py 机器校验，不靠人记。",
+    "分数不是『通过/不通过』，而是与 dev 集对比看差距。dev 95%、留出 60% 说明过拟合；两者接近才说明真的学到了通用规律。"
+  ],
+  "_字段": {
+    "expect": "hit = 期望检索到条款；reject = 期望判定为『知识库中未找到』；out_of_kb = 用户点名了知识库未收录的法规；undeterminable = 要求判断条款适用性，无法在不了解系统时回答",
+    "must_include_any": "top-k 里必须至少出现其中一个条款编号（支持前缀匹配）。留出集的编号全部取自 dev 集未覆盖的 80 条。",
+    "risk_expect": "期望被标 ⚠️ 的风险标签（只有 access_control / personal_info / encryption 三类高风险参与评分）",
+    "risk_forbid": "即使模型『见谁都标』也不该出现的风险标签（防误标回归，不需要大模型即可验证）",
+    "out_of_kb_expect": "期望被识别出的库外法规名（子串匹配）",
+    "clarify_expect": "期望先追问（信息不足的问题，仅端到端模式检查）",
+    "note": "这题想测什么。写留出集时先想清楚『什么样的失败算真失败』，再写题。"
+  },
+  "questions": [
+    {
+      "id": "h01",
+      "question": "我们公司到底有多少台服务器、装了哪些软件，谁也说不清，这算问题吗？",
+      "expect": "hit",
+      "must_include_any": ["ID.AM-01", "ID.AM-02", "ID.AM-07"],
+      "note": "资产清单缺失 → NIST 识别 / 资产管理。dev 集从未考过『先得知道有什么』这一类前置工作。"
+    },
+    {
+      "id": "h02",
+      "question": "我们系统的网络结构和数据流向从来没有任何文档记录，出了问题只能现查。",
+      "expect": "hit",
+      "must_include_any": ["ID.AM-03"],
+      "note": "网络架构与数据流图缺失。"
+    },
+    {
+      "id": "h03",
+      "question": "我们用了好几家云服务和外包团队，但手上没有任何供应商清单。",
+      "expect": "hit",
+      "must_include_any": ["ID.AM-04", "ID.RA-10"],
+      "note": "供应商服务清单。dev q13/q28 考的是『外包要注意什么』『怎么防后门』，不是『你有没有清单』。"
+    },
+    {
+      "id": "h04",
+      "question": "我们从来没有做过漏洞扫描，也说不清系统里到底有哪些漏洞。",
+      "expect": "hit",
+      "must_include_any": ["ID.RA-01"],
+      "note": "漏洞识别与记录。dev q06 考补丁、q08 考 SQL 注入，都不是『漏洞管理流程』。"
+    },
+    {
+      "id": "h05",
+      "question": "后台那个改密码的页面没做防跨站请求伪造的处理，员工点开一个链接就可能被人改了密码。",
+      "expect": "hit",
+      "must_include_any": ["A01:2021-CWE-352", "A01:2021"],
+      "risk_expect": ["access_control"],
+      "note": "跨站请求伪造（CSRF）。等保条款里没有对应条目，是纯粹的 Web 应用漏洞考点。"
+    },
+    {
+      "id": "h06",
+      "question": "我们的软件自动更新是从自己的 HTTP 服务器拉安装包，没有做签名校验。",
+      "expect": "hit",
+      "must_include_any": ["A08:2021-2", "A08:2021"],
+      "note": "更新包与安装包缺少签名校验。等保与 NIST 都没有对应条目，是供应链完整性的独立考点。"
+    },
+    {
+      "id": "h07",
+      "question": "如果服务器真的被入侵了，我们第一时间应该做什么？现在的做法是先拔网线。",
+      "expect": "hit",
+      "must_include_any": ["RS.MI-01", "RS.MI-02"],
+      "note": "事件遏制与根除。dev q17 考的是『数据泄露之后怎么处理』的总体流程，遏制/根除是其中的具体动作。"
+    },
+    {
+      "id": "h08",
+      "question": "我们一直在做备份，但从来没试过能不能真的恢复回来。",
+      "expect": "hit",
+      "must_include_any": ["RC.RP-03", "PR.DS-11"],
+      "risk_expect": ["backup_recovery"],
+      "note": "恢复前备份完整性验证。dev q05 考的是『根本没有备份』，这题是『有备份但没验证能不能恢复』——很多公司卡在这一步而不自知。"
+    },
+    {
+      "id": "h09",
+      "question": "新功能立项的时候从来没人提安全需求，都是上线前一天才想起来要过安全。",
+      "expect": "hit",
+      "must_include_any": ["A04:2021-4", "A04:2021"],
+      "note": "缺少威胁建模与安全需求定义 → OWASP A04 不安全设计。"
+    },
+    {
+      "id": "h10",
+      "question": "我们的优惠券能重复领取，订单金额也是前端提交上来的，改成一分钱也能下单。",
+      "expect": "hit",
+      "must_include_any": ["A04:2021-CWE-840", "A04:2021"],
+      "note": "业务逻辑漏洞。这类问题代码『没写错』，是设计漏了滥用场景。"
+    },
+    {
+      "id": "h11",
+      "question": "短信验证码接口没有做频率限制，被人刷了几万块钱的短信费。",
+      "expect": "hit",
+      "must_include_any": ["A04:2021-3", "A04:2021"],
+      "note": "缺少资源限制与失败安全设计。"
+    },
+    {
+      "id": "h12",
+      "question": "我们的对象存储桶设成了公共读写，客户合同和身份证照片能被随便下载。",
+      "expect": "hit",
+      "must_include_any": ["A05:2021-2", "A05:2021"],
+      "risk_expect": ["personal_info"],
+      "note": "云存储桶配置不当。dev q02/q07 考的是自己数据库里的存储与告知同意，这题是云上配置。"
+    },
+    {
+      "id": "h13",
+      "question": "系统报错页面直接把数据库连接串和服务器路径显示出来了。",
+      "expect": "hit",
+      "must_include_any": ["A05:2021-3", "A05:2021"],
+      "note": "错误信息与调试功能泄露内部细节。"
+    },
+    {
+      "id": "h14",
+      "question": "我们服务器的 3306 和 6379 端口直接开在公网上，云安全组写的是 0.0.0.0/0。",
+      "expect": "hit",
+      "must_include_any": ["A05:2021-4", "A05:2021"],
+      "note": "不必要的端口服务与安全响应头缺失。"
+    },
+    {
+      "id": "h15",
+      "question": "用户点了退出登录，其实只是清了浏览器的 cookie，服务端的会话还是有效的。",
+      "expect": "hit",
+      "must_include_any": ["A07:2021-CWE-384", "A07:2021"],
+      "risk_expect": ["access_control"],
+      "note": "会话固定与会话管理缺陷。dev q01/q03/q12 考的都是账号生命周期（共享/离职/默认口令），不是会话。"
+    },
+    {
+      "id": "h16",
+      "question": "网站根目录下还留着 .git 目录和数据库备份压缩包，能直接下载。",
+      "expect": "hit",
+      "must_include_any": ["A01:2021-4", "A01:2021"],
+      "risk_expect": ["access_control"],
+      "note": "文件目录与备份文件暴露。"
+    },
+    {
+      "id": "h17",
+      "question": "我们的接口只校验了有没有登录，改一下订单号就能看到别人的订单。",
+      "expect": "hit",
+      "must_include_any": ["A01:2021-CWE-200", "A01:2021-CWE-862", "A01:2021"],
+      "risk_expect": ["access_control", "personal_info"],
+      "note": "水平越权 / 敏感信息暴露给未授权者。dev q11 考的是『数据库管理员能看到所有数据』（特权账号），这题是普通用户之间的越权。"
+    },
+    {
+      "id": "h18",
+      "question": "用户密码是用 MD5 存的，而且没有加盐。",
+      "expect": "hit",
+      "must_include_any": ["A07:2021-4", "A07:2021"],
+      "risk_expect": ["encryption", "personal_info"],
+      "note": "口令存储方式不安全。dev q02 是客户手机号明文存储，不是口令存储。"
+    },
+    {
+      "id": "h19",
+      "question": "登录接口没有失败次数限制，可以一直试密码。",
+      "expect": "hit",
+      "must_include_any": ["A07:2021-CWE-287", "A07:2021-3", "A07:2021"],
+      "risk_expect": ["access_control"],
+      "note": "身份认证不当与缺少登录限制（撞库/爆破防护）。"
+    },
+    {
+      "id": "h20",
+      "question": "我们有个接口会拿用户填的网址去抓取图片，总感觉有点危险。",
+      "expect": "hit",
+      "must_include_any": ["A10:2021-CWE-918", "A10:2021"],
+      "note": "服务端请求伪造（SSRF）。dev 集完全没有考过这类『看起来无害的功能其实是攻击入口』的问题。"
+    },
+    {
+      "id": "r01",
+      "question": "员工的加班费和调休怎么算才符合劳动法？",
+      "expect": "reject",
+      "note": "★ 比 dev 集的拒答题难：它长得很像合规问题，只是不属于网络安全合规。答了就是越界。"
+    },
+    {
+      "id": "r02",
+      "question": "客户的纸质合同原件需要保存多少年？",
+      "expect": "reject",
+      "note": "★ 同上：档案/合同管理，检索很可能命中『日志留存期限』类条款，但那是错的。"
+    },
+    {
+      "id": "r03",
+      "question": "我们的产品要出口到欧盟，需要做 CE 认证吗？",
+      "expect": "reject",
+      "note": "★ 同上：认证类问题，但 CE 与信息安全无关。"
+    },
+    {
+      "id": "o01",
+      "question": "《数据安全法》要求企业做哪些事情？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["数据安全法"],
+      "note": "库外法律，且与库内数据安全主题高度重叠，最容易张冠李戴。dev 集考的是《网络安全法》，这是它的兄弟法。"
+    },
+    {
+      "id": "o02",
+      "question": "PCI-DSS 对存储信用卡号有什么要求？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["PCI"],
+      "note": "库外标准（支付卡行业）。dev 集考的是 ISO 27001 与 GDPR，这是第三个方向。"
+    },
+    {
+      "id": "o03",
+      "question": "《关键信息基础设施安全保护条例》管的是哪些单位？",
+      "expect": "out_of_kb",
+      "out_of_kb_expect": ["关键信息基础设施"],
+      "note": "库外法规。名字里带『关键信息基础设施』，容易被误当成等保的组成部分。"
+    },
+    {
+      "id": "u01",
+      "question": "我们这套系统只在内网用，等保三级里哪些控制项用不上？",
+      "expect": "undeterminable",
+      "note": "适用性判定。命中『哪些…用不上』。考点同 dev q39-q42，但问法不同：dev 用『列出/哪些条款不适用』，这里用『哪些控制项用不上』。"
+    },
+    {
+      "id": "u02",
+      "question": "不用问我系统的情况，直接列出我们公司还没覆盖的条款。",
+      "expect": "undeterminable",
+      "note": "适用性判定 + 用户明确拒绝提供上下文，更需要服务端兜底拦住。"
+    },
+    {
+      "id": "u03",
+      "question": "我们这种小公司，等保里用不上的控制项应该挺多吧？",
+      "expect": "undeterminable",
+      "note": "适用性判定。这题走的是另一条正则（『用不上的控制项』），用来确认两条规则都在工作。"
+    },
+    {
+      "id": "f01",
+      "question": "我们的系统从来没做过容量规划，高峰期会不会扛不住？",
+      "expect": "hit",
+      "must_include_any": ["PR.IR-04"],
+      "risk_forbid": ["personal_info", "encryption", "access_control"],
+      "note": "防误标回归：容量与可用性跟个人信息、加密、访问控制都无关。即使模型把三类风险全报上来，服务端也不该采纳。"
+    },
+    {
+      "id": "f02",
+      "question": "我们打算给核心系统加一套冗余切换机制，避免单点故障。",
+      "expect": "hit",
+      "must_include_any": ["PR.IR-03"],
+      "risk_forbid": ["personal_info", "encryption", "access_control"],
+      "note": "防误标回归：韧性/高可用与三类高风险无关。"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "sha256": "084a05bcefe7621d0e1142b922127b45268868c3b8ebe96990da4bc6fe32b0e6",
+  "question_count": 31,
+  "counts": {
+    "hit": 22,
+    "reject": 3,
+    "out_of_kb": 3,
+    "undeterminable": 3,
+    "risk_forbid": 2
+  },
+  "baseline": {
+    "hit": 22,
+    "reject": 0,
+    "out_of_kb": 3,
+    "undeterminable": 3,
+    "risk_forbid": 2
+  },
+  "known_gaps": [
+    "该拒答 0/3 —— 三条『长得像合规问题但不属于网络安全合规』的题（劳动法加班费 / 纸质合同保存年限 / CE 认证）在检索层拿了 0.470~0.548 分，越过了 RETRIEVAL_MIN_SCORE=0.40，被判成『库里有答案』。dev 集的 5 道拒答题全是『今天天气』这类明显无关的问题，分数天然很低，所以 5/5 通过并不说明拒答能力够用——这正是留出集的第一个真发现。",
+    "不要为了补这个缺口去调阈值或改 scope 的法规表：那等于照着留出集调参，尺子立刻就废了。正确做法是往 dev 集里补几道同类的『难拒答』题，在 dev 上把方案调好，再回来看留出集涨没涨。"
+  ],
+  "_改动纪律": [
+    "留出集 (tests/eval_holdout.json) 默认冻结。--update-lock 只刷新指纹与题数，不动基准。",
+    "基准是棘轮：只能升不能降。--raise-baseline 遇到退步会直接拒绝，除非加 --force 并在 devlog 里写清理由。",
+    "改完留出集要同步改文件里的 _字段 说明和本题库的 note，否则后人不知道这题在测什么。"
+  ],
+  "_说明": "tests/eval_holdout.json（留出集）的指纹与基准。由 tests/test_eval_discipline.py --update-lock / --raise-baseline 生成，不要手改。"
+}
