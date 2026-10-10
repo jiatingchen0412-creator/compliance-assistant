@@ -81,7 +81,16 @@ def _norm_text(text: str) -> str:
 
 
 def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    """留出集内容的指纹。
+
+    **按换行归一化之后再算**，别直接哈希原始字节：这个仓库的 .gitattributes 是
+    `* text=auto eol=lf`，文件在版本库里存 LF，但 Windows 上如果谁的
+    `core.autocrlf=true`，检出来就是 CRLF，原始字节哈希会对不上，
+    然后报一个"留出集被人改过"的假警报——那比不锁还糟，因为它会训练人忽略这个检查。
+    归一化之后仍然是内容敏感：真改了字，指纹照样变。
+    """
+    raw = path.read_bytes().replace(b"\r\n", b"\n")
+    return hashlib.sha256(raw).hexdigest()
 
 
 def _load_json(path: Path) -> dict:
