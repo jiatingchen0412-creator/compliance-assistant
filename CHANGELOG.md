@@ -52,12 +52,19 @@
   **有非本领域词且无网络安全锚点才拦**。
 - `tests/test_level_denial.py`：等级判定矩阵，`LEVELS × ACTIONS × SUBJECTS`
   在运行时生成 240 句，断言全部被拦且 `llm_calls == 0`；另有正例矩阵保证知识问法放行。
-- `tests/test_answer_render.py`：14 条，钉住「正文里没有任何模型文本」这条不变量
+- `tests/test_answer_render.py`：18 条，钉住「正文里没有任何模型文本」这条不变量
   （结构完整、概述来自知识库标题、`render()` 不再接受 `summary` 参数、
   `risk_tags` 与非法编号两条通道都塞不进话）。
 - `tests/test_quality_gate.py`：钉住质量自检的三态（True / False / None）与版本号单一来源。
 - `tests/test_devlog.py`：开发日志读写（12 条，全程临时目录）。
 - `tools/eval_coverage.py`：统计 dev 集覆盖了知识库哪些条款、哪些从没被考过。
+- `tests/check_syntax.py::_SUITE_CASE_RE`：文档里的数字校验从「总量」延伸到「分项」——
+  `` `tests/test_xxx.py`（N 条用例） `` 的 N 也必须等于该文件 `@case` 的个数。
+  起因很具体：答案拼装套件从 12 条加到 18 条时，全仓总量同步成了 195，
+  而 `docs/07` 里那句「（12 条用例）」没人改，因为只校验总量就查不到。
+  同源还统一了一处口径分叉：套件打印的「通过 N / M」必须等于自己的 `@case` 数，
+  所以 `tests/test_edge_cases.py` 的「真实库未被改动」从 runner 里的额外断言
+  改成了一条 `@case`（原来它打印 23/23 而 `@case` 只有 22 条）。
 - `config.APP_VERSION` 成为版本号单一来源，`/api/health` 返回它，
   `tests/check_syntax.py` 强制它与 `CHANGELOG.md` 最新版本一致。
 
