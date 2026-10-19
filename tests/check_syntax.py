@@ -261,6 +261,44 @@ def _prints_non_ascii(tree: ast.AST) -> bool:
     return False
 
 
+def check_version_sync() -> list[str]:
+    """版本号必须只有一个来源：`app/config.py` 的 `APP_VERSION`。
+
+    `CHANGELOG.md` 里最新的一节 `## [vX.Y]` 必须与它一致。
+    这里刻意不 `import app`（本脚本零依赖、要能在 venv 建好之前跑），
+    所以用正则读源码而不是导入常量。
+    """
+    problems: list[str] = []
+    cfg = ROOT / "app" / "config.py"
+    try:
+        text = cfg.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"读不到 {cfg}：{exc}"]
+    m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', text, re.M)
+    if not m:
+        return ["app/config.py 里找不到 APP_VERSION（版本号必须有单一来源）"]
+    version = m.group(1)
+
+    changelog = ROOT / "CHANGELOG.md"
+    try:
+        cl = changelog.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"读不到 {changelog}：{exc}"]
+    m2 = re.search(r"^##\s*\[v([0-9][^\]]*)\]", cl, re.M)
+    if not m2:
+        return ["CHANGELOG.md 里找不到形如 `## [v1.6] - 2026-10-19` 的版本标题"]
+    cl_version = m2.group(1)
+
+    if version != cl_version:
+        problems.append(
+            f"版本号不一致：app/config.py 是 {version}，CHANGELOG.md 最新是 {cl_version}"
+            f"（改一个就必须改另一个）"
+        )
+    else:
+        print(f"  版本号一致：v{version}（config.py ⇄ CHANGELOG.md）")
+    return problems
+
+
 def main() -> int:
     print("=" * 62)
     print("静态检查 · Python / JavaScript / JSON / bat")
@@ -274,6 +312,7 @@ def main() -> int:
     problems += check_svg_icons()
     problems += check_bat_ascii()
     problems += check_console_encoding()
+    problems += check_version_sync()
 
     print()
     if problems:

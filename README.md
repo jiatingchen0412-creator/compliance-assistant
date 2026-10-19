@@ -134,9 +134,10 @@ rem 看今天的日志 / 汇总最近 7 天
 .venv\Scripts\python.exe tests\test_export.py        rem Word 导出
 .venv\Scripts\python.exe tests\test_frontend.py      rem 界面（真实 Chrome 渲染，查无障碍与 JS 报错）
 .venv\Scripts\python.exe tests\test_eval_discipline.py  rem 留出集纪律（防"照着测试集调参"）
+.venv\Scripts\python.exe tests\test_devlog.py        rem 开发日志读写（在临时目录里跑）
 ```
 
-上面这段是**全部要跑的**：10 个自动化套件（134 个用例）加 `run_eval.py` 的两档（49 题评测），**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
+上面这段是**全部要跑的**：12 个自动化套件（其中 9 个逐条计数，共 114 条用例）加 dev 集 49 题、留出集 31 题的评测，**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
 
 > **为什么另有一套「留出集」**：上面那 49 题（dev 集）既是唯一的评测依据，又是当初调阈值、
 > 调权重、加口语词表时**照着调**的那一套。它全绿只能说明"能通过这一套题"，

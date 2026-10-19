@@ -186,6 +186,7 @@ def health():
         pass
     return {
         "ok": True,
+        "version": config.APP_VERSION,
         "startup": STARTUP_STATE,
         "llm": model,
         "vector_search": engine_vector,

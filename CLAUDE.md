@@ -45,7 +45,7 @@
 
 ### 每步做完的自检清单
 
-- [ ] 全部 10 个套件通过（`tests/check_syntax.py` 一定最先跑）
+- [ ] 全部 12 个套件通过（`tests/check_syntax.py` 一定最先跑）
 - [ ] 改了检索/提示词/防幻觉 → `run_eval.py --no-llm` 仍达标
 - [ ] 改了前端 → `tests/test_frontend.py` 通过（真浏览器，不是看 HTTP 200）
 - [ ] 改了配置项 → `.env.example` 与 `tools/sync_config.py` 同步
@@ -117,9 +117,9 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（10 个套件 / 134 个用例）
+# 跑全部测试（12 个套件；其中 9 个逐条计数，共 114 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
-.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（不需要 Ollama，秒级）
+.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（49 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
 .venv\Scripts\python.exe tests\test_scope.py
 .venv\Scripts\python.exe tests\test_guard.py
@@ -130,6 +130,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 .venv\Scripts\python.exe tests\test_export.py
 .venv\Scripts\python.exe tests\test_frontend.py      # 需要 Node + Chrome
 .venv\Scripts\python.exe tests\test_eval_discipline.py  # 留出集纪律（防"照着测试集调参"）
+.venv\Scripts\python.exe tests\test_devlog.py        # 开发日志读写（临时目录）
 
 # 起服务 / 健康检查
 .venv\Scripts\python.exe -m app.main

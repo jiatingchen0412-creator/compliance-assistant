@@ -130,8 +130,10 @@ def append(section: str, text: str, day: str | None = None, *, timestamp: bool =
     # 多行内容：第一行接在 "- " 后面，其余行缩进对齐
     bullet = prefix + body.replace("\n", "\n  ")
 
-    # 占位行（"- "、"- （开工前先写清楚…）" 这类）先清掉，避免日志里全是空壳
-    content = re.sub(rf"(## {section}\n)(?:- \S*\n|- （[^\n]*）\n)+", r"\1", content)
+    # 占位行（"- "、"- （开工前先写清楚…）" 这类）先清掉，避免日志里全是空壳。
+    # 注意必须是 `-\s*\n` 而不是 `- \S*\n`：后者会把**已有的正文条目**一起吃掉
+    # （"第一条" 这类不含空格的内容会被当成占位符），是加测试时抓出来的真缺陷。
+    content = re.sub(rf"(## {section}\n)(?:-\s*\n|- （[^\n]*）\n)+", r"\1", content)
 
     path.write_text(_insert_into_section(content, section, bullet), encoding="utf-8")
     return path

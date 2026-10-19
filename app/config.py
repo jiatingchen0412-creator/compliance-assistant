@@ -61,6 +61,12 @@ def _bool(key: str, default: bool) -> bool:
     return value in {"1", "true", "yes", "on", "y"}
 
 
+# ---------- 版本 ----------
+# **单一来源**：CHANGELOG.md 里最新的一节 `## [vX.Y]` 必须与它一致。
+# 由 tests/check_syntax.py 的 check_version_sync() 强制——改一个就必须改另一个，
+# 否则静态检查失败。这样用户报障时从 /api/health 拿到的版本号一定对得上更新日志。
+APP_VERSION = "1.6"
+
 # ---------- Web ----------
 APP_HOST = _str("APP_HOST", "127.0.0.1")
 APP_PORT = _int("APP_PORT", 8765)

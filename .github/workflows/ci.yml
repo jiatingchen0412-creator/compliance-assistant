@@ -1,10 +1,13 @@
 name: CI
 
-# 跑什么：9 个自动化套件（99 个用例）+ 44 题检索质量评测。
+# 跑什么：11 个自动化套件（134 个用例）+ dev 集 49 题 + 留出集 31 题。
 # 都不需要 Ollama——测试里对大模型的调用一律打桩，见 CLAUDE.md 的铁律三。
 #
 # 需要联网的只有一处：fastembed 要下载语义模型（BAAI/bge-small-zh-v1.5，约 95 MB）。
 # 用 actions/cache 缓存 data/models，正常情况下只在缓存过期时下一次。
+#
+# action 版本：2026-10 升到 checkout@v7 / setup-python@v7 / setup-node@v7 / cache@v6，
+# 旧版跑在 Node 20 运行时上，GitHub 会强制迁到 Node 24 并出告警。
 
 on:
   push:
@@ -33,14 +36,14 @@ jobs:
         os: [ubuntu-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"      # 与开发机 .venv 保持一致
           cache: pip
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"          # tests/check_syntax.py 要用 node --check 校验 JS
 
@@ -50,7 +53,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: 缓存语义模型
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/models
           key: fastembed-${{ runner.os }}-bge-small-zh-v1.5
@@ -66,7 +69,7 @@ jobs:
       - name: 静态检查（最先跑）
         run: python tests/check_syntax.py
 
-      - name: 检索与判定质量（44 题，不上大模型）
+      - name: 检索与判定质量（49 题，不上大模型）
         env:
           HF_MIRROR: https://huggingface.co
         run: python tests/run_eval.py --no-llm
@@ -99,19 +102,23 @@ jobs:
       - name: Word 导出
         run: python tests/test_export.py
 
+      - name: 开发日志读写
+        # 用临时目录，不碰仓库里的 devlog/（否则 CI 会把日志改脏）
+        run: python tests/test_devlog.py
+
   frontend:
     name: 界面回归（真 Chrome + axe-core）
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.13"
           cache: pip
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -121,7 +128,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: 缓存语义模型
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: data/models
           key: fastembed-${{ runner.os }}-bge-small-zh-v1.5
