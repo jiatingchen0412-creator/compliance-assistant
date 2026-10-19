@@ -249,25 +249,28 @@ GOOD_ANSWERS = [
 
 
 @case(
-    f"回答侧矩阵（端到端）：{len(BAD_ANSWERS)} 条等级/许可结论句作为 summary 传给 render()，"
-    f"最终正文一律不含；{len(GOOD_ANSWERS)} 条知识型句在第二层 strip 里原样保留"
+    f"回答侧矩阵（端到端）：{len(BAD_ANSWERS)} 条等级/许可结论句通过剩下的每一条通道都进不了正文；"
+    f"{len(GOOD_ANSWERS)} 条知识型句在第二层 strip 里原样保留"
 )
 def test_answer_side_matrix() -> tuple[bool, str]:
-    """t28：从"删句子"改成"整条 summary 拒绝"，所以这里直接测最终正文。
+    """t29 之后模型没有"写正文"的通道了，所以这条用例改测通道本身。
 
-    第五轮之前这条用例测的是 guard.strip_level_conclusions(sentence)；
-    六轮补丁证明句子级手术不收敛（漏 8 条、误删 4 条）。现在测的是用户真正
-    看到的东西：把每条结论句当 summary 喂给 render()，正文里不许出现它，
-    同时条款清单与收尾必须照常（t28 的核心取舍：漏网只少一句概述）。
+    历史：第五轮之前测 guard.strip_level_conclusions(sentence) 删句；t28 测把
+    结论句当 summary 喂给 render() 被整条拒绝。t29 红队证明"概述只要与条款有
+    一个实词交集就放行"，第七轮索性取消 summary——模型唯一还能影响正文的通道
+    只剩 risk_tags 与 clauses 编号，所以这里把同一批结论句从这两条通道灌进去。
     """
     survivors: list[str] = []
     missing_parts: list[str] = []
     for sentence in BAD_ANSWERS:
+        stem = sentence.rstrip("。")
+        # 模型还能影响正文的通道只剩 risk_tags（clauses 里对不上的编号会被
+        # chat 层剔除、只回显编号形状，见 test_answer_render 的路径 3 用例）。
         text = answer_mod.render(
-            "测试问题", [_clause()], summary=sentence, risk_tags=[], mode="llm"
+            "测试问题", [_clause()], risk_tags=[sentence], mode="llm"
         )
-        if sentence.rstrip("。") in text.replace(" ", ""):
-            survivors.append(sentence)
+        if stem in text.replace(" ", ""):
+            survivors.append(f"{sentence} ← {text[:40]}")
         if "8.1.4.1" not in text or "不构成正式测评结论" not in text:
             missing_parts.append(sentence)
     broken: list[str] = []
@@ -277,7 +280,8 @@ def test_answer_side_matrix() -> tuple[bool, str]:
             broken.append(sentence)
     return check(
         not survivors and not broken and not missing_parts,
-        f"{len(BAD_ANSWERS)} 条结论句一条都没进正文，{len(GOOD_ANSWERS)} 条知识型输出原样保留",
+        f"{len(BAD_ANSWERS)} 条结论句走 risk_tags / clauses 两条通道都进不了正文，"
+        f"{len(GOOD_ANSWERS)} 条知识型输出原样保留",
         f"漏进正文 {survivors[:3]}；误删 {broken[:3]}；丢结构 {missing_parts[:2]}",
     )
 

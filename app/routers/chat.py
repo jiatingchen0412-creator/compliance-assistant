@@ -35,6 +35,31 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
+# 「长得像条款编号」的字符串：8.1.4.1 / A05:2021 / DE.CM-01 / PR.AA-01。
+# 只用于**回显**校验：模型返回的 clauses 是不可信输入，不能原样拼进正文
+# （t29 红队用 clauses:["你们应当按三级建设。"] 把一句话写进了用户看到的答案）。
+_ID_LIKE = re.compile(r"^(?=.*[\d:])[A-Za-z0-9][A-Za-z0-9._:\-]{1,31}$")
+
+
+def _citation_warning(invalid_ids: list[str]) -> str:
+    """把「这几个编号对不上」写成用户能读懂的一句话。
+
+    只回显长得像条款编号的字符串：invalid_ids 直接来自模型的 clauses 字段，
+    是**不可信输入**。旧实现把它们原样拼进正文，模型只要返回
+    clauses:["你们应当按三级建设。"] 就能把一句话写进用户看到的答案。
+    回显不了的（含中文、含标点、过长）一律不展示原文，只说"若干编号"。
+    """
+    if not invalid_ids:
+        return ""
+    echo = [x for x in invalid_ids[:5] if _ID_LIKE.fullmatch(x)]
+    cited = "、".join(echo) if echo else "若干编号"
+    return (
+        "⚠️ 引用核对：回答里提到的 "
+        + cited
+        + " 不在本次检索到的条款中，已从引用列表里剔除；"
+        "这部分内容没有知识库依据，请以官方标准文本为准，不要直接当成结论。"
+    )
+
 GREETING_PATTERNS = re.compile(
     r"^\s*(你好|您好|hi|hello|嗨|在吗|你是谁|你能做什么|介绍一下自己|帮助|怎么用)[\s!！。.?？]*$",
     re.I,
@@ -380,7 +405,6 @@ def answer_question(
             data = {
                 "found": True,
                 "clauses": [],
-                "summary": None,
                 "risk_tags": [],
                 "need_clarification": False,
                 "followup_questions": [],
@@ -394,7 +418,6 @@ def answer_question(
         data = {
             "found": True,
             "clauses": [],
-            "summary": None,
             "risk_tags": [],
             "need_clarification": False,
             "followup_questions": [],
@@ -430,20 +453,17 @@ def answer_question(
             + "（模型只能从【可用条款】里挑）"
         )
 
-    # ---- summary：模型唯一可能带回来的自由文本，用「整体拒绝」过滤 ----
-    # 命中任何一条判据就整条丢掉，条款清单与收尾完全不受影响。
-    summary, reject_reason = answer_mod.filter_summary(data.get("summary"), clauses)
-    raw_summary = str(data.get("summary") or "").strip()
-    if reject_reason and raw_summary:
-        notes.append(f"模型给的一句话概述被整条丢弃（{reject_reason}）；条款清单照常显示")
-        log.info("summary 被拒绝 · %s · %r", reject_reason, raw_summary[:60])
-
-    # ---- 答案正文：服务端按固定结构拼装，模型写的任何正文都不采用 ----
+    # ---- 答案正文：服务端按固定结构拼装，模型写的任何文字都不采用 ----
+    # t29 之后 schema 里已经没有 answer / summary：概述由 answer.topic_line()
+    # 从知识库的条款标题生成，正文里不会出现任何模型写的话。
+    legacy_summary = str(data.get("summary") or "").strip()
+    if legacy_summary:
+        notes.append("模型写的一句话概述未被采用（概述由程序根据条款标题生成）")
+        log.info("summary 未被采用 · %r", legacy_summary[:60])
     if found:
         answer_text = answer_mod.render(
             question,
             clauses,
-            summary=summary,
             risk_tags=data.get("risk_tags") or [],
             mode=mode,
         )
@@ -464,15 +484,11 @@ def answer_question(
     # 对不上的编号只可能来自模型挑的 clauses（已在上面剔进 invalid_ids）。
     # 但"编号对不上"仍要在**回答正文**里说清楚，而不是只写进前端折叠的技术详情：
     # 用户读到的是一段带编号的结论，他不会展开备注去发现编号对不上。
+    # t29：invalid_ids 来自模型的 clauses 字段，是**不可信字符串**。
+    # 旧实现把它们原样拼进正文，模型返回 clauses:["你们应当按三级建设。"]
+    # 就能把一句话写进用户看到的答案。回显交给 _citation_warning() 收口。
     unmatched = [str(x) for x in invalid_ids]
-    citation_warning = ""
-    if unmatched:
-        citation_warning = (
-            "⚠️ 引用核对：回答里提到的 "
-            + "、".join(unmatched[:5])
-            + " 不在本次检索到的条款中，已从引用列表里剔除；"
-            "这部分内容没有知识库依据，请以官方标准文本为准，不要直接当成结论。"
-        )
+    citation_warning = _citation_warning(unmatched)
 
     # ---- 库外法规：先清掉转述，再由服务端强制补上"未收录"说明 ----
     # 顺序很重要：先清模型写出来的东西，再拼服务端生成的说明。
@@ -664,8 +680,8 @@ def _stream(question: str, session_id: str | None) -> Iterator[str]:
     def on_preface(text: str) -> None:
         """首屏：服务端拼好的条款清单，检索完就能发，不用等模型。
 
-        t28 起模型不再写正文，所以这段"开场 + 全部条款块"是稳定的、可先发的；
-        模型返回后如果 summary 通过过滤，再以增量/替换的形式补在后面。
+        t28 起模型不再写正文，所以这段"开场 + 概述 + 全部条款块"是稳定的、可先发的；
+        模型返回后正文已经完整，只剩下风险汇总与免责收尾由服务端补齐。
         作为 delta 发出去，是为了复用前端已有的"前缀一致就续写"逻辑。
         """
         if not text or preface_sent["done"]:
