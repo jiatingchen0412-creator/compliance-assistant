@@ -315,8 +315,7 @@ _FRACTION_RULES = [
     ("undet", ("适用性判定拦截率",), None, "undet_required/EXPECTED_COUNTS.undeterminable"),
 ]
 
-_INT_RULES = [
-    # (规则名, 正则, 期望值键, 真值说明)
+_INT_RULES = [    # (规则名, 正则, 期望值键, 真值说明)
     ("用例总数", re.compile(r"(\d+)\s*条用例"), "case_total", "CI 套件里 @case 的总数"),
     ("自动化套件数", re.compile(r"(\d+)\s*个自动化套件"), "suite_total", "ci.yml 里实际跑起来的 tests/*.py 数"),
     ("dev 集题数", re.compile(r"(\d+)\s*道评测题"), "dev_total", "tests/eval_questions.json 的 questions 数"),
@@ -325,6 +324,11 @@ _INT_RULES = [
     ("dev 集题数", re.compile(r"(\d+)\s*题（dev 集）"), "dev_total", "同上"),
     ("留出集题数", re.compile(r"留出集\s*\**\s*(\d+)\s*\**\s*题"), "holdout_total", "tests/eval_holdout.json 的 questions 数"),
 ]
+
+# 单个套件的用例数：`tests/test_xxx.py`（N 条用例）
+_SUITE_CASE_RE = re.compile(
+    r"tests[/\\]([A-Za-z_]+\.py)`?\s*[（(]\s*(\d+)\s*条用例"
+)
 
 
 def _md_files() -> list[Path]:
@@ -352,12 +356,15 @@ def _code_constants() -> dict:
         counts[str(q.get("expect"))] = counts.get(str(q.get("expect")), 0) + 1
 
     case_total = 0
+    suite_cases: dict[str, int] = {}
     ci_yml = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     ci_scripts = sorted({Path(p).name for p in re.findall(r"tests[/\\]([A-Za-z_]+\.py)", ci_yml)})
     for name in ci_scripts:
         path = ROOT / "tests" / name
         if path.exists():
-            case_total += len(re.findall(r"^@case", path.read_text(encoding="utf-8"), re.M))
+            n = len(re.findall(r"^@case", path.read_text(encoding="utf-8"), re.M))
+            suite_cases[name] = n
+            case_total += n
     # 套件数 = CI 真正跑起来的脚本数（含 check_syntax 与 run_eval）：
     # 文档里"12 个套件每次推送都在 CI 上跑"这句话要能对得上，就不能把没进 CI 的文件算进去。
     suite_total = len(ci_scripts)
@@ -372,6 +379,7 @@ def _code_constants() -> dict:
         "holdout_total": len(hs),
         "case_total": case_total,
         "suite_total": suite_total,
+        "suite_cases": suite_cases,
     }
 
 
@@ -475,6 +483,16 @@ def check_doc_sync() -> list[str]:
                     problems.append(
                         f"{rel}:{lineno} 写的 {key}={val}，代码实际 {real}"
                         f"（app/quality.py 的 RED_LINES）"
+                    )
+            # 5) 单个套件的用例数：`tests/test_xxx.py`（N 条用例）
+            #    为什么单独一条：报完 answer_render 的 12、t30 又加到 18，全仓数字对得上、
+            #    这一句却没人改，因为我们只校验了总数。总数对了不代表分项对了。
+            for name, num in _SUITE_CASE_RE.findall(line):
+                real = const["suite_cases"].get(name)
+                if real is not None and int(num) != real:
+                    problems.append(
+                        f"{rel}:{lineno} 写的 {name} 有 {num} 条用例，代码实际 {real} 条"
+                        f"（tests/{name} 里 @case 的个数）"
                     )
 
     if problems:

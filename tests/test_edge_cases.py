@@ -719,6 +719,21 @@ def test_cors_not_wildcard():
     return True, f"恶意来源无 ACAO；同源 {allowed} 正常放行"
 
 
+@case("真实库一个字节都没变（测试不污染用户数据）")
+def test_real_db_untouched() -> tuple[bool, str]:
+    """F4 守卫。放在文件最后，跑完前面所有用例之后才比哈希。"""
+    real = Path(str(_REAL_DB.get("path") or ""))
+    before = str(_REAL_DB.get("hash") or "")
+    if not str(real):
+        return False, "守卫未初始化：main() 没走 _use_temp_db()"
+    after = _sha256(real) if real.exists() else ""
+    return check(
+        after == before,
+        f"哈希未变（{after[:6] or '空库'}…）",
+        f"哈希变了：{before[:8] or '空'} → {after[:8] or '空'}",
+    )
+
+
 # --------------------------------------------------------------------------
 # runner
 # --------------------------------------------------------------------------
@@ -728,6 +743,13 @@ def _sha256(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+# 真实库守卫：main() 启动时把路径与哈希记在这里，最后一条 @case 负责比对。
+# 为什么做成用例而不是 runner 里额外加一次断言：那样「通过 23 / 23」会比本文件
+# 的 @case 条数多 1，文档口径（check_syntax 数 @case）与运行口径从此对不上，
+# 每加一个守卫就要在两套数字之间手工换算——正是这一轮在消灭的那类漂移。
+_REAL_DB: dict[str, object] = {}
 
 
 def _use_temp_db() -> tuple[Path, Path, str]:
@@ -746,6 +768,7 @@ def _use_temp_db() -> tuple[Path, Path, str]:
         if src.exists():
             shutil.copy2(src, Path(str(tmp_db) + suffix))
     config.DB_PATH = tmp_db
+    _REAL_DB.update({"path": real, "hash": real_hash})
     return tmp_dir, real, real_hash
 
 
@@ -782,20 +805,8 @@ def main() -> int:
                 conn.execute("DELETE FROM messages WHERE session_id = ?", (row["id"],))
                 conn.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
 
-    # 真实库必须一个字节都没变（F4：测试不许污染用户数据）
-    real_hash_after = _sha256(real_db) if real_db.exists() else ""
-    real_ok = real_hash_after == real_hash_before
-    print(f"{'OK ' if real_ok else 'XX '}真实库未被测试改动：{real_db}")
-    if real_ok:
-        detail = f"哈希未变（{real_hash_after[:6] or '空库'}…）"
-    else:
-        detail = f"哈希变了：{real_hash_before[:8]} → {real_hash_after[:8]}"
-    print(f"     {detail}")
-    if real_ok:
-        passed += 1
-    else:
-        failed += 1
-
+    # 真实库的完整性由最后一条 @case（test_real_db_untouched）负责断言，
+    # 不在这里另算一次，否则运行口径会比 @case 条数多 1。
     shutil.rmtree(tmp_dir, ignore_errors=True)
     print("=" * 78)
     print(f"通过 {passed} / {passed + failed}")

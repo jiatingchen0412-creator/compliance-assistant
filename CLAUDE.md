@@ -76,6 +76,12 @@
 - 独立脚本打印中文 → `check_syntax.py` 的 `check_console_encoding()` 拦截
   （不 `import app` 的脚本拿不到 `app/console.py` 的自动修正，
   在英文 Windows 的 cp1252 代码页下打印中文会直接崩掉进程）
+- 文档里的**单个套件**用例数 → `check_syntax.py` 的 `_SUITE_CASE_RE` 拦截
+  （总数对得上不代表分项对得上：答案拼装套件从 12 条加到 18 条时，
+  全仓总数同步了，`docs/07` 里那句「（12 条用例）」没人改）
+- 套件的**运行口径**必须等于它的 `@case` 条数 → 所以 `test_edge_cases.py`
+  把「真实库未被改动」也注册成一条 `@case`，而不是在 runner 里额外加一次断言
+  （否则打印「通过 23 / 23」，而 `@case` 只有 22 条，两套数字从此对不上）
 
 ### 三、测试不许依赖外部服务是否在线
 
@@ -118,7 +124,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（15 个套件；其中 12 个逐条计数，共 194 条用例）
+# 跑全部测试（15 个套件；其中 12 个逐条计数，共 195 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
 .venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（72 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
