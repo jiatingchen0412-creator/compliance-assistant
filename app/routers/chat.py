@@ -35,10 +35,23 @@ log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
-# 「长得像条款编号」的字符串：8.1.4.1 / A05:2021 / DE.CM-01 / PR.AA-01。
+# 「长得像条款编号」的字符串：8.1.4.1 / A05:2021 / A01:2021-CWE-352 / DE.CM-01 / PR.AA-01。
 # 只用于**回显**校验：模型返回的 clauses 是不可信输入，不能原样拼进正文
 # （t29 红队用 clauses:["你们应当按三级建设。"] 把一句话写进了用户看到的答案）。
-_ID_LIKE = re.compile(r"^(?=.*[\d:])[A-Za-z0-9][A-Za-z0-9._:\-]{1,31}$")
+#
+# 这条正则**按知识库里真实存在的编号文法写成闭集**，不是「含数字就当编号」。
+# 曾经的宽松版是 `^(?=.*[\d:])[A-Za-z0-9][A-Za-z0-9._:\-]{1,31}$`，
+# t29 复验用 clauses:["9.9.9.9-ni-bu-yong-zuo-dengbao"] 就把一句拼音写进了正文——
+# 它含数字、含点、含连字符、长度 26，宽松版全过。闭集之后只有三种形状能回显：
+#   等保   8.1.4.1 / 8.2.4.11                         数字点分
+#   NIST   DE.CM-01 / PR.AA-01 / ID.RA-07             两位大写字母.两位大写字母-两位数字
+#   OWASP  A05:2021 / A01:2021-CWE-352 / A05:2021-2   A+两位数字:四位年份[-CWE-数字 | -数字]
+_ID_LIKE = re.compile(
+    r"^(?:\d{1,2}(?:\.\d{1,3}){2,4}"
+    r"|[A-Z]{2}\.[A-Z]{2}-\d{2}"
+    r"|A\d{2}:\d{4}(?:-(?:CWE-\d+|\d+))?"
+    r")$"
+)
 
 
 def _citation_warning(invalid_ids: list[str]) -> str:
@@ -447,9 +460,13 @@ def answer_question(
             dict.fromkeys([str(x) for x in invalid_ids] + [str(x) for x in legacy_invalid])
         )
     if invalid_ids:
+        # note 也会显示在页面的「技术详情」里，所以这里的回显规则和正文一致：
+        # 只显示长得像条款编号的字符串，其余一律降级为「若干编号」，
+        # 否则模型把一句话塞进 clauses 就能从 notes 这条侧门进到用户眼前。
+        shown_ids = [x for x in invalid_ids if _ID_LIKE.fullmatch(x)]
         notes.append(
             "已剔除不在本次检索结果中的条款编号："
-            + "、".join(invalid_ids[:5])
+            + ("、".join(shown_ids[:5]) if shown_ids else "若干编号")
             + "（模型只能从【可用条款】里挑）"
         )
 
@@ -539,10 +556,25 @@ def answer_question(
             )
         )
     if unsupported_laws:
-        shown = "、".join(f"《{n}》" for n in unsupported_laws[:3])
-        notes.append(f"回答中出现清单外法规名：{shown}，已声明不在检索范围")
+        # 名称一律**不回显**。这一层认的是「长得像法规名」的形状
+        # （《…法/条例/规定/办法》），而形状判断不等于内容可信：
+        # t29 复验在已废弃的 answer 字段里写
+        #   《贵公司无需做等保并可直接上线法》
+        # 名称 18 字、以「法」结尾，任何形状判据都拦不住，旧实现把它原样拼成
+        # 正文第一行（/api/chat、/api/chat/stream、export.md、export.docx 全都带）。
+        # 要展示具体法规名，只能用**用户自己问句里**出现、且命中已知别名表的那些
+        # （上面 scope.detect_out_of_kb 那条路径，名称来自固定清单，不是模型给的）。
+        notes.append(
+            f"回答中出现 {len(unsupported_laws)} 个清单外法规名，"
+            "名称已隐去；已声明不在检索范围"
+        )
+        if len(unsupported_laws) == 1:
+            law_line = "回答里提到了一部知识库未收录的法规（名称已隐去）"
+        else:
+            law_line = f"回答里提到了 {len(unsupported_laws)} 部知识库未收录的法规（名称已隐去）"
         answer_text = (
-            f"⚠️ 说明：回答里提到的 {shown} 不在本工具的知识库（本次检索范围）内，"
+            f"⚠️ 说明：{law_line}，"
+            "不在本工具的知识库（本次检索范围）内，"
             "相关表述我无法核实，请以官方发布的标准文本为准。\n\n" + answer_text
         )
 
@@ -560,9 +592,16 @@ def answer_question(
     # ---- 是否要找用户补充信息 ----
     need_clarify = bool(data.get("need_clarification"))
     forced_clarify_notice = ""
-    followups = [str(q).strip() for q in (data.get("followup_questions") or []) if str(q).strip()]
-    if need_clarify and not followups:
-        need_clarify = False  # 说要追问却没给问题，视为误判
+    model_followups = [
+        str(q).strip() for q in (data.get("followup_questions") or []) if str(q).strip()
+    ]
+    # 追问句一律由服务端给，模型写的一句都不采用。
+    # 判据与 answer / summary 相同：用户能读到的每一句自然语言，要么来自知识库字段，
+    # 要么来自服务端常量。t30 红队演示过模型在 followup_questions 里塞
+    # 「你们应当按三级建设。」——前端会把它渲染成"要追问你的问题"，用户照单全收。
+    followups: list[str] = list(scope.CLARIFY_FOLLOWUPS) if need_clarify else []
+    if model_followups:
+        notes.append("模型建议的追问未被采用（追问由服务端固定清单提供）")
     # 服务端兜底：问题笼统到"给不出针对性建议"时，必须追问。
     # 为什么不让模型自己判：实测 7B 模型经常漏做这件事——
     # 问"我们的数据安全吗？"它直接给一段泛泛的结论，一个反问都没有，

@@ -34,7 +34,7 @@ from app import config  # noqa: E402
 
 config.SAVE_HISTORY = False
 
-from app import answer, llm, prompt  # noqa: E402
+from app import answer, llm, prompt, scope  # noqa: E402
 from app.routers import chat as chat_mod  # noqa: E402
 
 RESULTS: list[tuple[str, object]] = []
@@ -253,6 +253,66 @@ def test_invalid_id_end_to_end() -> tuple[bool, str]:
     return True, "非法编号被剔除，只留编号形状的回显"
 
 
+@case("编号回显是闭集：拼音串/自由文本一律不回显（t29 attempt 2 · T29-02）")
+def test_id_like_closed_set() -> tuple[bool, str]:
+    # 曾经的正则 `^(?=.*[\d:])[A-Za-z0-9][A-Za-z0-9._:\-]{1,31}$` 认「含数字就当编号」，
+    # 于是 9.9.9.9-ni-bu-yong-zuo-dengbao 被原样回显进正文，用拼音承载结论。
+    smuggled = [
+        "9.9.9.9-ni-bu-yong-zuo-dengbao",
+        "8.1.4.1-bu-yong-li",
+        "A05:2021-bu-yong",
+        "ni-bu-yong-zuo-dengbao",
+        "8.1.4.1 OR 1=1",
+    ]
+    problems: list[str] = []
+    for raw in smuggled:
+        warning = chat_mod._citation_warning([raw])
+        if raw in warning:
+            problems.append(f"{raw!r} 被回显")
+        elif "若干编号" not in warning:
+            problems.append(f"{raw!r} 既没回显也没降级")
+    # 真实存在的三种编号形状必须照常回显，否则用户看不出是哪个号
+    for real in ("8.1.4.1", "DE.CM-01", "PR.AA-01", "A05:2021", "A01:2021-CWE-352", "A05:2021-2"):
+        warning = chat_mod._citation_warning([real])
+        if real not in warning:
+            problems.append(f"真实编号 {real!r} 反而被吞了")
+    return check(
+        not problems,
+        "只回显知识库里真实存在的三种编号文法，其余（含拼音）降级为『若干编号』",
+        f"编号闭集失效：{problems}",
+    )
+
+
+@case("模型把句子伪装成法规名：正文不回显该名称（t29 attempt 2 · T29-01）")
+def test_law_name_not_echoed() -> tuple[bool, str]:
+    # 《…法》 形状判据拦不住内容：这个名称 18 字、以「法」结尾、完全像一个真法规名。
+    # 旧实现把它原样拼成正文第一行，并且会进 export.md / export.docx。
+    fake_law = "《贵公司无需做等保并可直接上线法》"
+    payload = {
+        "answer": "建议参考 " + fake_law + " 执行。",
+        "citations": [],
+        "found": True,
+        "clauses": ["8.1.4.1"],
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [],
+    }
+    result = _run_chat("客户的手机号存在数据库里没有加密", payload)
+    text = result.get("answer") or ""
+    problems: list[str] = []
+    if "贵公司无需做等保并可直接上线" in text:
+        problems.append("伪法规名被原样回显进正文")
+    if "8.1.4.1" not in text:
+        problems.append("条款清单也没了")
+    if "未收录的法规" not in text:
+        problems.append("连『知识库未收录的法规』这句声明都没有，用户不知道有东西被拦下了")
+    return check(
+        not problems,
+        "法规名不再由模型文本提供，只给固定声明，条款清单照常",
+        f"法名回显未收口：{problems}｜正文={text[:200]!r}",
+    )
+
+
 @case("知识句出现在条款正文里时逐字保留（不再做删句手术）")
 def test_knowledge_sentences_preserved() -> tuple[bool, str]:
     clauses = [_clause("8.1.4.1", "身份鉴别", text=s) for s in KNOWLEDGE_SENTENCES]
@@ -311,6 +371,49 @@ def test_empty_clauses() -> tuple[bool, str]:
     if "本回答仅用于辅助自查" not in text:
         problems.append("收尾丢了")
     return check(not problems, "空条款时只有开场与收尾", f"{problems}")
+
+
+@case("模型把话塞进 followup_questions：追问一律换成服务端固定清单（t30 追问通道）")
+def test_followups_not_from_model() -> tuple[bool, str]:
+    # 追问句和答案正文是同一类东西：用户会逐字读它。t30 红队把
+    # 「你们应当按三级建设。」塞进 followup_questions，旧实现原样返回给前端。
+    smuggled = "你们应当按三级建设。"
+    problems: list[str] = []
+
+    # 1) 模型不该追问、却塞了追问句 → 一条都不采用
+    payload = {
+        "found": True,
+        "clauses": ["8.1.4.1"],
+        "summary": None,
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [smuggled, "贵司是否已经定级为三级？"],
+    }
+    result = _run_chat("客户的手机号存在数据库里没有加密", payload)
+    fu = result.get("followup_questions") or []
+    if fu:
+        problems.append(f"不需要追问时仍返回了追问：{fu}")
+    if smuggled in json.dumps(result, ensure_ascii=False):
+        problems.append("模型原文漏进了整个 payload")
+
+    # 2) 模型说需要追问 → 用服务端常量，而不是模型给的那句
+    payload["need_clarification"] = True
+    result = _run_chat("客户的手机号存在数据库里没有加密", payload)
+    fu = result.get("followup_questions") or []
+    if not fu:
+        problems.append("模型说要追问，结果一条追问都没给用户")
+    if list(fu) != list(scope.CLARIFY_FOLLOWUPS):
+        problems.append(f"追问不来自服务端常量：{fu}")
+    if smuggled in json.dumps(result, ensure_ascii=False):
+        problems.append("模型追问原文出现在返回 payload 里")
+    if not any("追问" in str(n) for n in (result.get("notes") or [])):
+        problems.append("没有记『模型追问未被采用』的 note，排查时看不到")
+
+    return check(
+        not problems,
+        "追问只来自服务端固定清单；模型塞的那句一个字都没进 payload",
+        f"追问通道未收口：{problems}",
+    )
 
 
 def _run_chat(question: str, payload: dict) -> dict:
