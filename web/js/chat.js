@@ -86,15 +86,32 @@ async function refreshHealth() {
   }
 }
 
-/* 检索质量自检未通过时，在聊天区顶部挂一条黄色警告 */
+/* 检索质量自检未通过、或者根本没能执行时，在聊天区顶部挂一条黄色警告。
+ *
+ * 三态约定（与 /api/quality 一致）：
+ *   passed === true  → 通过，不提示
+ *   passed === false → 未通过，列出跌破的红线
+ *   passed === null  → 没跑成 / 结果未知，同样必须提示
+ * 以前这里用 `quality.passed || quality.skipped` 一句带过：自检崩了会写 skipped=True，
+ * 于是警告被直接隐藏，界面看起来「一切正常」——正是本次要修的失败模式。
+ */
 function renderQualityWarning(quality) {
   const existing = document.getElementById('qualityWarn');
   const scroll = document.getElementById('chatScroll');
-  if (!quality || !quality.checked || quality.passed || quality.skipped) {
+  if (!quality || !quality.checked || quality.passed === true) {
     if (existing) existing.remove();
     return;
   }
   if (existing) existing.remove();
+
+  const unknown = quality.passed !== false;
+  const title = unknown ? '检索质量自检未执行（结果未知）' : '检索质量自检未通过';
+  const hint = unknown
+    ? '自检本身没跑起来（评测文件损坏、依赖缺失等），所以现在无法确认检索质量是否正常。'
+      + '这不等于「通过」，请点「重新自检」重试，或运行 tools\\check_quality.py 查看原因。'
+    : '说明检索参数（阈值 / 权重 / 分词词典）被改动后指标下降了。'
+      + '回答可能变得不准，建议检查 .env 里的 RETRIEVAL_MIN_SCORE 等配置，'
+      + '或运行 tools\\check_quality.py 查看详情。';
 
   const box = document.createElement('div');
   box.className = 'quality-warn';
@@ -103,13 +120,9 @@ function renderQualityWarning(quality) {
   box.innerHTML = `
     <span class="qw-icon">${ICON('alert')}</span>
     <div class="qw-body">
-      <div class="qw-title">检索质量自检未通过</div>
+      <div class="qw-title">${esc(title)}</div>
       <ul class="qw-list">${items}</ul>
-      <div class="qw-hint">
-        说明检索参数（阈值 / 权重 / 分词词典）被改动后指标下降了。
-        回答可能变得不准，建议检查 .env 里的 RETRIEVAL_MIN_SCORE 等配置，
-        或运行 tools\\check_quality.py 查看详情。
-      </div>
+      <div class="qw-hint">${esc(hint)}</div>
     </div>
     <button id="qualityRecheck">重新自检</button>`;
   scroll.insertBefore(box, scroll.firstChild);
@@ -384,6 +397,10 @@ function renderRisks(risks) {
           </div>`;
 }
 
+/* 引用卡片正文用到的唯一 id 序号。aria-controls 要指向一个真实存在的元素，
+   页面上可能同时有多组引用（历史回放 + 新回答），所以不能写死。 */
+let citeSeq = 0;
+
 function renderCitations(box, citations) {
   if (!citations || !citations.length) return;
   const title = document.createElement('div');
@@ -409,23 +426,35 @@ function renderCitations(box, citations) {
     const srcBadge = c.source_kind === 'user'
       ? '<span class="src-badge user">用户导入</span>'
       : '<span class="src-badge">内置</span>';
-    const srcLink = c.source_url
-      ? `<a class="src-link" href="${esc(c.source_url)}" target="_blank" rel="noopener">${ICON('external')}查看官方来源</a>`
-      : '';
+    // source_url 是随导入 JSON 一起进来的数据，必须两道闸：
+    // 1) safeUrl 只放行 http/https；2) esc 转义引号。缺一条都能被拿来注入。
+    const srcHref = safeUrl(c.source_url);
+    const srcLink = srcHref
+      ? `<a class="src-link" href="${esc(srcHref)}" target="_blank" rel="noopener noreferrer">${ICON('external')}查看官方来源</a>`
+      : (c.source_url
+        ? `<span class="src-link is-plain" title="来源地址不是 http(s) 链接，出于安全考虑不生成跳转">${esc(c.source_url)}</span>`
+        : '');
+    const bodyId = `cite-body-${++citeSeq}`;
 
     card.innerHTML = `
-      <div class="cite-head">
+      <button type="button" class="cite-head" aria-expanded="false" aria-controls="${bodyId}">
         <span class="cite-arrow">${ICON('chevron-right')}</span>
         <span class="cite-id">${esc(c.clause_id)}</span>
         <span class="cite-std">${esc(c.standard_name)}</span>
         <span class="cite-title">${esc(c.title)}</span>
-      </div>
-      <div class="cite-body">
+      </button>
+      <div class="cite-body" id="${bodyId}">
         <div class="cite-meta">${esc((c.chapter_path || []).join(' › '))}</div>
         <div class="cite-text">${esc(c.text || '')}</div>
         <div class="cite-tags">${tags}${typeTag}${srcBadge}${srcLink}</div>
       </div>`;
-    card.querySelector('.cite-head').onclick = () => card.classList.toggle('open');
+    // 用真 <button> 而不是给 div 挂 onclick：div 不可聚焦、没有 Enter/空格，
+    // 键盘用户根本展开不了条款原文（docs/03 里自己就写着这条规范）。
+    const head = card.querySelector('.cite-head');
+    head.addEventListener('click', () => {
+      const open = card.classList.toggle('open');
+      head.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
     wrap.appendChild(card);
   }
   box.appendChild(wrap);
@@ -449,7 +478,9 @@ function modeBadgeHtml(meta) {
 
   if (meta.out_of_kb && meta.out_of_kb.length) {
     const names = meta.out_of_kb.map((n) => String(n).replace(/《.*?》/g, '')).join('、');
-    badges.push(wrap('out-of-kb', `您提到的 ${names} 未收录，以下是与它相关的合规要求`));
+    // 名字来自问题里被识别出的法规名，虽然当前后端只会回内置的规范名，
+    // 但这条路径是拼 HTML 的，不能赌上游永远干净。
+    badges.push(wrap('out-of-kb', `您提到的 ${esc(names)} 未收录，以下是与它相关的合规要求`));
   }
   if (meta.need_clarification) {
     badges.push(wrap('', '信息不足，需要您补充几个情况'));
@@ -500,20 +531,22 @@ async function send(text) {
   row.innerHTML = `<div class="avatar" aria-hidden="true">${ICON('shield')}</div>
     <div class="bubble"><div class="status-line">
       <span class="typing"><span></span><span></span><span></span></span>
-      <span id="stageText">正在检索知识库条款…</span>
+      <span class="status-text">正在检索知识库条款…</span>
     </div></div>`;
   scroll.appendChild(row);
   scrollTop(true);
 
   const bubble = row.querySelector('.bubble');
+  // 用本条消息自己的节点，不要 document.getElementById：多条消息同时存在时，
+  // 按 id 取到的永远是页面上第一个，后续提问的进度文案会写到旧气泡里。
+  const statusEl = row.querySelector('.status-text');
   let textEl = null;
   let acc = '';
 
   try {
     await API.chatStream(text, state.sessionId, {
       status: (d) => {
-        const el = document.getElementById('stageText');
-        if (el) el.textContent = d.text || '处理中…';
+        if (statusEl) statusEl.textContent = d.text || '处理中…';
       },
       session: (d) => {
         state.sessionId = d.session_id;
@@ -613,6 +646,13 @@ async function send(text) {
   } finally {
     state.sending = false;
     document.getElementById('btnSend').disabled = false;
+    // 流断了但一个字都没收到（后端进程崩了、连接被重置、被中途掐掉）：
+    // 占位气泡不能就这么留着，否则页面永远停在"正在检索…"，
+    // 用户既不知道为什么没结果，也没有任何可以点的东西。
+    // 已经渲染过错误提示的就不再覆盖一遍。
+    if (!textEl && !bubble.querySelector('.msg-error')) {
+      bubble.innerHTML = '<div class="msg-error">没有收到回答：连接可能已中断，请重试。</div>';
+    }
     scrollTop();
   }
 }

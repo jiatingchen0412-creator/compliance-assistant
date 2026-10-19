@@ -230,6 +230,37 @@ def test_append_suffix():
     )
 
 
+@case("首屏：服务端拼好的条款清单先下发，不用等模型")
+def test_preface_streamed_first():
+    """t28：模型不再写正文，开场+条款块由服务端拼装，检索完就能发。
+
+    这段以 delta 形式下发，复用前端"前缀一致就续写"的逻辑；模型返回后
+    如果 summary 通过过滤，只补后面的增量。
+    """
+    preface = "根据您描述的情况，知识库里与之相关的条款是：\n\n**8.1.4.1 身份鉴别**"
+
+    def answer(**kw):
+        if kw.get("on_preface"):
+            kw["on_preface"](preface)
+        return _canned(preface + "\n\n一句话概述：这些条款涉及身份鉴别。\n\n本回答仅用于辅助自查。")
+
+    events, text = _run_stream(fake_answer=answer)
+    deltas = [e for e in events if e[0] == "delta"]
+    kinds = [e[0] for e in events]
+    ok = (
+        bool(deltas)
+        and preface in text
+        and text.startswith(preface)
+        and "replace" not in kinds
+        and "一句话概述" in text
+    )
+    return (
+        (ok, f"首屏 {len(preface)} 字先到，概述随后增量补上（事件 {kinds}）")
+        if ok
+        else (False, f"首屏没按预期下发：事件={kinds} 文本={text[:80]!r}")
+    )
+
+
 def _canned(answer: str) -> dict:
     return {
         "session_id": "test-session",
@@ -256,8 +287,10 @@ def _run_stream(fake_answer) -> tuple[list[tuple[str, str]], str]:
     original_answer = chat_mod.answer_question
     original_session = chat_mod._ensure_session
 
-    def fake(q, sid=None, on_delta=None, on_stage=None):
-        return fake_answer(q=q, sid=sid, on_delta=on_delta, on_stage=on_stage)
+    def fake(q, sid=None, on_delta=None, on_stage=None, on_preface=None):
+        return fake_answer(
+            q=q, sid=sid, on_delta=on_delta, on_stage=on_stage, on_preface=on_preface
+        )
 
     chat_mod.answer_question = fake
     chat_mod._ensure_session = lambda session_id, question: "test-session"

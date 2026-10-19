@@ -299,6 +299,192 @@ def check_version_sync() -> list[str]:
     return problems
 
 
+# ---------- 文档里的数字 vs 代码里的真值 ----------
+
+_DOC_SKIP = "doc-sync: skip"  # 写成 <!-- doc-sync: skip --> 即可豁免该行
+
+# 这些是"当前态"断言。历史段落（"v1.0 时召回 25/25"）确实会与今天的数字不同，
+# 那类句子在行尾写 `doc-sync: skip` 显式豁免——豁免是可见的，不会变成静默漂移。
+_FRACTION_RULES = [
+    # (规则名, 行内出现这些词才算断言, 允许的 (分子, 分母) 集合, 代码真值说明)
+    ("reject", ("拒答正确率", "拒答率", "拒答题"), None, "reject_required/EXPECTED_COUNTS.reject"),
+    ("recall", ("召回率",), None, "recall_min/EXPECTED_COUNTS.hit"),
+    ("risk", ("风险标注率", "风险标注"), None, "risk_min/EXPECTED_COUNTS.risk"),
+    ("clarify", ("追问正确率",), None, "clarify_required/EXPECTED_COUNTS.clarify"),
+    ("outkb", ("库外法规识别率", "库外法规声明率"), None, "outkb_required/EXPECTED_COUNTS.out_of_kb"),
+    ("undet", ("适用性判定拦截率",), None, "undet_required/EXPECTED_COUNTS.undeterminable"),
+]
+
+_INT_RULES = [
+    # (规则名, 正则, 期望值键, 真值说明)
+    ("用例总数", re.compile(r"(\d+)\s*条用例"), "case_total", "CI 套件里 @case 的总数"),
+    ("自动化套件数", re.compile(r"(\d+)\s*个自动化套件"), "suite_total", "ci.yml 里实际跑起来的 tests/*.py 数"),
+    ("dev 集题数", re.compile(r"(\d+)\s*道评测题"), "dev_total", "tests/eval_questions.json 的 questions 数"),
+    ("dev 集题数", re.compile(r"dev 集\s*\**\s*(\d+)\s*\**\s*题"), "dev_total", "同上"),
+    ("dev 集题数", re.compile(r"(\d+)\s*题（(?:下称|上称) dev 集）"), "dev_total", "同上"),
+    ("dev 集题数", re.compile(r"(\d+)\s*题（dev 集）"), "dev_total", "同上"),
+    ("留出集题数", re.compile(r"留出集\s*\**\s*(\d+)\s*\**\s*题"), "holdout_total", "tests/eval_holdout.json 的 questions 数"),
+]
+
+
+def _md_files() -> list[Path]:
+    files = [ROOT / "README.md", ROOT / "CHANGELOG.md", ROOT / "CLAUDE.md"]
+    files += sorted((ROOT / "docs").glob("*.md"))
+    return [p for p in files if p.exists()]
+
+
+def _code_constants() -> dict:
+    """用正则读源码/题库，不 import app（本脚本要能在装依赖之前跑）。"""
+    cfg = (ROOT / "app" / "config.py").read_text(encoding="utf-8")
+    qtext = (ROOT / "tests" / "eval_questions.json").read_text(encoding="utf-8")
+    qdata = json.loads(qtext)
+    qs = qdata["questions"] if isinstance(qdata, dict) else qdata
+    hdata = json.loads((ROOT / "tests" / "eval_holdout.json").read_text(encoding="utf-8"))
+    hs = hdata["questions"] if isinstance(hdata, dict) else hdata
+
+    def block(name: str, text: str) -> dict[str, int]:
+        m = re.search(rf"^{name}\s*=\s*\{{(.*?)^\}}", text, re.S | re.M)
+        return {k: int(v) for k, v in re.findall(r'"(\w+)"\s*:\s*(\d+)', m.group(1))} if m else {}
+
+    quality = (ROOT / "app" / "quality.py").read_text(encoding="utf-8")
+    counts: dict[str, int] = {}
+    for q in qs:
+        counts[str(q.get("expect"))] = counts.get(str(q.get("expect")), 0) + 1
+
+    case_total = 0
+    ci_yml = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    ci_scripts = sorted({Path(p).name for p in re.findall(r"tests[/\\]([A-Za-z_]+\.py)", ci_yml)})
+    for name in ci_scripts:
+        path = ROOT / "tests" / name
+        if path.exists():
+            case_total += len(re.findall(r"^@case", path.read_text(encoding="utf-8"), re.M))
+    # 套件数 = CI 真正跑起来的脚本数（含 check_syntax 与 run_eval）：
+    # 文档里"12 个套件每次推送都在 CI 上跑"这句话要能对得上，就不能把没进 CI 的文件算进去。
+    suite_total = len(ci_scripts)
+
+    mver = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', cfg, re.M)
+    return {
+        "version": mver.group(1) if mver else "?",
+        "red": block("RED_LINES", quality),
+        "counts": block("EXPECTED_COUNTS", quality),
+        "questions": counts,
+        "dev_total": len(qs),
+        "holdout_total": len(hs),
+        "case_total": case_total,
+        "suite_total": suite_total,
+    }
+
+
+def check_doc_sync() -> list[str]:
+    """README / docs 里的关键数字必须与代码常量一致。
+
+    为什么需要：v1.6 交付时文档里还留着「拒答 5/5」「44 道评测题」「12 个套件 114 条用例」，
+    而代码早就变成 10/10、49 题、137 条用例。文档不会自己报错，只能靠这一层比对。
+    这里刻意不 import app：本脚本要能在 venv 装好之前跑，所以全部用正则读源码。
+
+    约定：当前态数字必须对得上；历史段落的数字（"v1.0 时召回 25/25"）在行尾写
+    `doc-sync: skip` 显式豁免。
+    """
+    const = _code_constants()
+    red, counts = const["red"], const["counts"]
+    problems: list[str] = []
+
+    # 代码自身先自洽：一票否决项的 RED_LINES 必须等于 EXPECTED_COUNTS 里的题数
+    for key in ("reject_required", "outkb_required", "undet_required", "clarify_required"):
+        cat = {"reject_required": "reject", "outkb_required": "out_of_kb",
+               "undet_required": "undeterminable", "clarify_required": "clarify"}[key]
+        if key in red and cat in counts and red[key] != counts[cat]:
+            problems.append(
+                f"app/quality.py 自身不一致：RED_LINES.{key}={red[key]}，"
+                f"但 EXPECTED_COUNTS.{cat}={counts[cat]}（文档没法同时对上两个数）"
+            )
+
+    allowed: dict[str, set[tuple[int, int]]] = {
+
+        "reject": {(red.get("reject_required", 0), counts.get("reject", 0))},
+        "recall": {(red.get("recall_min", 0), counts.get("hit", 0)),
+                   (counts.get("hit", 0), counts.get("hit", 0))},
+        "risk": {(red.get("risk_min", 0), counts.get("risk", 0)),
+                 (counts.get("risk", 0), counts.get("risk", 0))},
+        "clarify": {(red.get("clarify_required", 0), counts.get("clarify", 0)),
+                    (counts.get("clarify", 0), counts.get("clarify", 0))},
+        "outkb": {(red.get("outkb_required", 0), counts.get("out_of_kb", 0)),
+                  (counts.get("out_of_kb", 0), counts.get("out_of_kb", 0))},
+        "undet": {(red.get("undet_required", 0), counts.get("undeterminable", 0)),
+                  (counts.get("undeterminable", 0), counts.get("undeterminable", 0))},
+    }
+    expected_desc = {
+        "reject": f"{red.get('reject_required')}/{counts.get('reject')}",
+        "recall": f"≥{red.get('recall_min')}/{counts.get('hit')}",
+        "risk": f"≥{red.get('risk_min')}/{counts.get('risk')}",
+        "clarify": f"{red.get('clarify_required')}/{counts.get('clarify')}",
+        "outkb": f"{red.get('outkb_required')}/{counts.get('out_of_kb')}",
+        "undet": f"{red.get('undet_required')}/{counts.get('undeterminable')}",
+    }
+    int_expected = {
+        "case_total": const["case_total"],
+        "suite_total": const["suite_total"],
+        "dev_total": const["dev_total"],
+        "holdout_total": const["holdout_total"],
+    }
+
+    scanned = 0
+    for path in _md_files():
+        rel = path.relative_to(ROOT).as_posix()
+        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if _DOC_SKIP in line:
+                continue
+            scanned += 1
+            # 1) 版本号：`**版本**：v1.6`
+            for ver in re.findall(r"版本\**\s*[:：]\s*v([0-9][0-9.]*)", line):
+                if ver != const["version"]:
+                    problems.append(
+                        f"{rel}:{lineno} 写的 v{ver}，代码实际 v{const['version']}"
+                        f"（app/config.py 的 APP_VERSION）"
+                    )
+            # 2) 红线类指标的分式
+            for name, markers, _, desc in _FRACTION_RULES:
+                if not any(m in line for m in markers):
+                    continue
+                for a, b in re.findall(r"(\d+)\s*/\s*(\d+)", line):
+                    pair = (int(a), int(b))
+                    if pair not in allowed[name]:
+                        problems.append(
+                            f"{rel}:{lineno} 写的 {a}/{b}，代码实际 {expected_desc[name]}"
+                            f"（{desc}）"
+                        )
+            # 3) 题数 / 套件数 / 用例数
+            for _name, pattern, key, desc in _INT_RULES:
+                # 「12 条用例」也可能是在说某一个套件自己的用例数（如 test_devlog 的 12 条，
+                # 见 docs/00 的遗留项表）。只有整句讲的是"套件总数"时才当作全量断言。
+                if key == "case_total" and not (
+                    "套件" in line or "逐条计数" in line or "用例总数" in line
+                ):
+                    continue
+                for val in pattern.findall(line):
+                    if int(val) != int_expected[key]:
+                        problems.append(
+                            f"{rel}:{lineno} 写的 {val}，代码实际 {int_expected[key]}"
+                            f"（{desc}）"
+                        )
+            # 4) `RED_LINES.xxx` 表里的数值（CLAUDE.md 用表格列出来）
+            for key, val in re.findall(r"`?(recall_min|reject_required|risk_min|outkb_required|"
+                                       r"undet_required|clarify_required|forbid_max_false)`?\s*\|\s*(\d+)", line):
+                real = red.get(key)
+                if real is not None and int(val) != real:
+                    problems.append(
+                        f"{rel}:{lineno} 写的 {key}={val}，代码实际 {real}"
+                        f"（app/quality.py 的 RED_LINES）"
+                    )
+
+    if problems:
+        for p in problems:
+            print(f"  文档/代码数字不一致：{p}")
+    else:
+        print(f"  文档数字一致：扫了 {len(_md_files())} 个 md、{scanned} 行")
+    return problems
+
+
 def main() -> int:
     print("=" * 62)
     print("静态检查 · Python / JavaScript / JSON / bat")
@@ -313,6 +499,7 @@ def main() -> int:
     problems += check_bat_ascii()
     problems += check_console_encoding()
     problems += check_version_sync()
+    problems += check_doc_sync()
 
     print()
     if problems:

@@ -1,9 +1,14 @@
 """检索与回答质量评测（回归测试）。
 
 用法（在项目根目录执行）：
-    .venv\\Scripts\\python.exe tests\\run_eval.py              # 两层都跑（Ollama 没开就只跑第一层）
-    .venv\\Scripts\\python.exe tests\\run_eval.py --no-llm     # 只跑第一层，秒出
+    .venv\\Scripts\\python.exe tests\\run_eval.py              # 两层都跑；Ollama 没开则层 2 未执行、退出码 3
+    .venv\\Scripts\\python.exe tests\\run_eval.py --no-llm     # 只跑第一层，秒出；退出码 0 只代表层 1 通过
     .venv\\Scripts\\python.exe tests\\run_eval.py --limit 6    # 第二层只跑前 6 题
+
+退出码（别把 0 理解成"提示词也没问题"）：
+    0 = 本次要求的层全部通过（--no-llm 时只代表层 1）
+    1 = 有指标跌破红线
+    3 = 层 2 本应执行但没执行（如 Ollama 未运行）——结果不完整，不能当"全部达标"
 
 产出：
     tests/eval_report.md   —— 可读的评测报告
@@ -35,7 +40,10 @@ out_of_kb / undeterminable / risk_forbid 三类检查**都不看分数**，只�
 from __future__ import annotations
 
 import argparse
+import hashlib
+import shutil
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -46,6 +54,52 @@ from app import config, db, ingest, quality  # noqa: E402
 from app.retrieval import get_engine  # noqa: E402
 
 REPORT_FILE = Path(__file__).resolve().parent / "eval_report.md"
+
+def _sha256_file(path: Path) -> str:
+    """文件 sha256（越小写越好读；只用于「跑前/跑后是不是同一个库」）。"""
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _isolate_db() -> tuple[Path, Path, str]:
+    """把数据库指到真实库的临时副本，返回 (临时目录, 真实库路径, 跑之前的哈希)。
+
+    为什么必须这么做：评测会 init_db / 灌种子 / 读会话，旧版直接跑在
+    data/app.db 上——测试污染用户数据这件事，我们已经在 test_edge_cases
+    上吃过一次亏（真实库 sha256 从 4C3A32… 变成 8E83E4…）。评测脚本没有
+    理由例外。副本连 -wal / -shm 一起拷，避免漏掉未落盘的事务。
+    """
+    real = Path(config.DB_PATH)
+    real_hash = _sha256_file(real) if real.exists() else ""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="run_eval_db_"))
+    tmp_db = tmp_dir / "app.db"
+    for suffix in ("", "-wal", "-shm"):
+        src = Path(str(real) + suffix)
+        if src.exists():
+            shutil.copy2(src, Path(str(tmp_db) + suffix))
+    config.DB_PATH = tmp_db
+    return tmp_dir, real, real_hash
+
+
+def _finish_db_guard(code: int, real_db: Path, hash_before: str) -> int:
+    """收尾：真实库要是被改了，一律当失败（非 0 退出），不遮不掩。"""
+    if not hash_before:
+        print("[隔离] 找不到真实库，跳过「未被改动」校验（首次运行请先启动一次服务）")
+        return code
+    hash_after = _sha256_file(real_db) if real_db.exists() else ""
+    if hash_after != hash_before:
+        print(f"XX 真实库被本次评测改动了：{real_db}")
+        print(f"   跑之前 sha256 {hash_before[:16]}…")
+        print(f"   跑之后 sha256 {hash_after[:16]}…")
+        print("   这违反「测试不污染用户数据」；说明隔离没生效，别把它当小问题。")
+        return 2
+    print(f"[隔离] 真实库未被评测改动：{real_db}（sha256 {hash_after[:16]}…）")
+    return code
+
+
 
 # 逐题明细里"期望"一栏的中文显示
 EXPECT_LABEL = {
@@ -91,6 +145,8 @@ def build_report(result: dict, verdict: dict, e2e: dict | None, e2e_verdict: dic
 
     lines.append(verdict_line(verdict, "第一层 · 检索"))
     lines.append(verdict_line(e2e_verdict, "第二层 · 端到端"))
+    if e2e_verdict is None:
+        lines.append("- ⚠️ 第二层 · 端到端：未执行（本报告不代表提示词/模型输出质量）")
     lines.append("")
 
     def metrics_table(v: dict, label: str) -> None:
@@ -163,6 +219,17 @@ def main() -> int:
     parser.add_argument("--top-k", type=int, default=6)
     args = parser.parse_args()
 
+    tmp_dir, real_db, hash_before = _isolate_db()
+    try:
+        code = _run(args)
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+    return _finish_db_guard(code, real_db, hash_before)
+
+
+def _run(args: argparse.Namespace) -> int:
+    """跑一次评测。数据库已由 main() 指到临时副本，这里不用管。"""
+
     db.init_db()
     seed = ingest.ensure_seed_loaded()
     if not seed.get("skipped"):
@@ -192,12 +259,14 @@ def main() -> int:
 
     # ---------------- 第二层：端到端 ----------------
     e2e = e2e_verdict = None
-    if not args.no_llm:
+    layer2_expected = not args.no_llm
+    if layer2_expected:
         print()
         print("[评测] 第二层 · 端到端评测（要调大模型，较慢；用 --no-llm 可跳过）…")
         e2e = quality.evaluate_end2end(limit=args.limit)
         if e2e.get("skipped"):
-            print(f"[评测] 已跳过：{e2e['reason']}")
+            print(f"[评测] 层 2 未执行：{e2e['reason']}")
+            print("[评测] 注意：本次结果只覆盖层 1（检索/判定），不能代表提示词与模型输出质量")
         else:
             e2e_verdict = quality.check_end2end_red_lines(e2e["stats"])
             print("=" * 100)
@@ -222,11 +291,17 @@ def main() -> int:
     failures = list(verdict["failures"])
     if e2e_verdict is not None:
         failures += e2e_verdict["failures"]
-    if not failures:
-        print("[评测] ✅ 全部指标达标")
+    if failures:
+        print("[评测] ❌ 指标跌破红线：" + "；".join(failures))
+        return 1
+    if args.no_llm:
+        print("[评测] 层 1 指标达标（--no-llm：层 2 端到端未执行，本结果不代表提示词/模型质量）")
         return 0
-    print("[评测] ❌ 指标跌破红线：" + "；".join(failures))
-    return 1
+    if e2e_verdict is None:
+        print("[评测] 层 1 指标达标，但层 2 端到端未执行 —— 结果不完整，不能算「全部达标」")
+        return 3
+    print("[评测] ✅ 两层指标全部达标")
+    return 0
 
 
 if __name__ == "__main__":

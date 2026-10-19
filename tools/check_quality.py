@@ -37,14 +37,20 @@ def main() -> int:
     db.init_db()
     verdict = quality.run_check(top_k=args.top_k)
 
+    # passed 是三态的：True=通过、False=没通过、None=没跑成 / 无法判定。
+    # None 绝不能落到「通过」分支，也不能被说成「跌破红线」（那是另一回事）。
+    passed = verdict.get("passed")
+    items = verdict.get("items") or []
+    failures = verdict.get("failures") or []
+
     if args.json:
         print(json.dumps(
             {
-                "passed": verdict["passed"],
+                "passed": passed,
                 "skipped": verdict.get("skipped", False),
                 "reason": verdict.get("reason", ""),
-                "failures": verdict["failures"],
-                "items": verdict["items"],
+                "failures": failures,
+                "items": items,
                 "stats": verdict.get("stats", {}),
                 "config": {
                     "min_score": config.RETRIEVAL_MIN_SCORE,
@@ -55,12 +61,21 @@ def main() -> int:
             ensure_ascii=False,
             indent=2,
         ))
-        return 0 if verdict["passed"] else 1
+        return 0 if passed is True and not verdict.get("skipped") else 1
+
+    if passed is None and not verdict.get("skipped"):
+        if not args.quiet:
+            print("质量自检未能判定（passed=None，fail-loud）：结果未知时不按通过处理。")
+            for reason in failures:
+                print(f"  · {reason}")
+        return 1
 
     if verdict.get("skipped"):
+        # 自检"跳过"不是正常状态：它意味着评测没跑成（题文件坏了、代码抛异常等）。
+        # 以前这里 return 0，会把一次失败的检查伪装成通过。
         if not args.quiet:
-            print(f"质量自检已跳过：{verdict.get('reason', '')}")
-        return 0
+            print(f"质量自检未完成（fail-loud）：{verdict.get('reason', '')}")
+        return 1
 
     if not args.quiet:
         print("=" * 62)
@@ -71,7 +86,7 @@ def main() -> int:
               f"语义权重 {config.HYBRID_VECTOR_WEIGHT}")
         print()
 
-    for item in verdict["items"]:
+    for item in items:
         if args.quiet and item["passed"]:
             continue
         flag = "OK" if item["passed"] else "XX"
@@ -79,7 +94,7 @@ def main() -> int:
               f"要求 {item['required']}")
 
     # 失败时把具体哪几题挂了打出来，方便定位
-    if not verdict["passed"]:
+    if passed is False:
         print()
         print("未通过的题目：")
         for row in verdict.get("rows", []):
@@ -89,9 +104,10 @@ def main() -> int:
 
     if not args.quiet:
         print()
-        print(f"结论：{'✅ 达标' if verdict['passed'] else '❌ 跌破红线'}")
+        conclusion = {True: "✅ 达标", False: "❌ 跌破红线"}.get(passed, "⚠️ 未能判定（结果未知）")
+        print(f"结论：{conclusion}")
 
-    return 0 if verdict["passed"] else 1
+    return 0 if passed is True else 1
 
 
 if __name__ == "__main__":

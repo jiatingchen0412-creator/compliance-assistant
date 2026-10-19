@@ -88,8 +88,11 @@ def main() -> int:
     print(f"  检查时间：{quality.get('checked_at') or '-'}")
 
     line("知识库")
+    kb_stats = None
+    kb_error = ""
     try:
-        stats = client.get("/api/kb/stats").json()
+        kb_stats = client.get("/api/kb/stats").json()
+        stats = kb_stats
         print(f"  标准数：{stats['standards']}")
         print(f"  条款数：{stats['clauses']}（启用 {stats['enabled_clauses']}）")
         print(f"  已建向量：{stats['with_vector']}")
@@ -104,6 +107,7 @@ def main() -> int:
             user = by_source.get("user", 0)
             print(f"  来源：内置 {builtin} 条 · 用户导入 {user} 条 · 导入批次 {stats.get('batches', 0)} 次")
     except Exception as exc:
+        kb_error = str(exc)
         print(f"  读取失败：{exc}")
 
     line("配置")
@@ -114,8 +118,26 @@ def main() -> int:
 
     print()
     print("=" * 62)
-    ok = (startup.get("ready") and llm.get("model_ready")
-          and (quality.get("passed", True) or quality.get("skipped")))
+    # 只有"四项都真通过"才算正常：
+    #   · 质量自检跑完了、且 passed=True、且不是跳过；
+    #   · KB 统计读得到，且条款数 > 0。
+    # 之前 skipped 算正常、KB 读失败只打印一行，会让一次坏掉的体检显示"一切正常"。
+    quality_ok = (bool(quality.get("checked")) and quality.get("passed") is True
+                  and not quality.get("skipped"))
+    kb_ok = kb_stats is not None and int(kb_stats.get("clauses") or 0) > 0
+    if not quality_ok:
+        if not quality.get("checked"):
+            print("  ! 质量自检还没跑完（不能当作正常）")
+        elif quality.get("skipped"):
+            print(f"  ! 质量自检被跳过：{quality.get('reason', '')}")
+        else:
+            print("  ! 质量自检未通过（见上方 failures）")
+    if not kb_ok:
+        detail = f"：{kb_error}" if kb_error else ""
+        clauses = (kb_stats or {}).get("clauses", "?")
+        print(f"  ! 知识库不可用{detail}（条款数={clauses}）")
+
+    ok = (startup.get("ready") and llm.get("model_ready") and quality_ok and kb_ok)
     print("总体：" + ("✅ 一切正常" if ok else "⚠️ 有项目需要注意（见上方）"))
     return 0 if ok else 2
 

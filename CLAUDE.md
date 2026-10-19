@@ -45,7 +45,7 @@
 
 ### 每步做完的自检清单
 
-- [ ] 全部 12 个套件通过（`tests/check_syntax.py` 一定最先跑）
+- [ ] 全部 15 个套件通过（`tests/check_syntax.py` 一定最先跑）
 - [ ] 改了检索/提示词/防幻觉 → `run_eval.py --no-llm` 仍达标
 - [ ] 改了前端 → `tests/test_frontend.py` 通过（真浏览器，不是看 HTTP 200）
 - [ ] 改了配置项 → `.env.example` 与 `tools/sync_config.py` 同步
@@ -92,22 +92,23 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 
 | 项 | 值 | 说明 |
 |---|---|---|
-| `recall_min` | 27 | 该命中的 29 题里至少对 27 题 |
+| `recall_min` | 25 | 该命中的 25 题里至少对 25 题 |
 | `reject_required` | 10 | 10 道无关题必须全部拒答（**一票否决**） |
 | `risk_min` | 8 | 9 道高风险题至少标对 8 题 |
 | `outkb_required` | 6 | 点名库外法规的题必须全部识别（**一票否决**） |
-| `undet_required` | 4 | 适用性判定题必须全部拦住（**一票否决**） |
+| `undet_required` | 27 | 适用性判定题必须全部拦住（**一票否决**） |
+| `clarify_required` | 4 | 笼统问题必须先追问（**一票否决**） |
 | `forbid_max_false` | 0 | ⚠️ 误标一道都不许有 |
 
-`EXPECTED_COUNTS`（hit 29 / reject 10 / out_of_kb 6 / undeterminable 4 / risk_forbid 2）
+`EXPECTED_COUNTS`（hit 25 / reject 10 / out_of_kb 6 / undeterminable 27 / clarify 4 / risk_forbid 2）
 卡的是**题库数量本身**——只看通过数的话，题库被删掉一半，红线反而显示"通过"。
 加题必须同步改这两个常量。
 
 > 一个结构性教训：**不要用被评测的同一个阈值去定义"正确答案"**。
 > v1.1 的质量门就犯过这个错——阈值过了但本不该回答的问题，质量门结构上发现不了。
-> 四类判定现在各自独立。
+> 五类判定现在各自独立。
 
-> 第二个结构性教训：**dev 集全绿不等于系统能用**。49 道 dev 题都是我们自己写的、
+> 第二个结构性教训：**dev 集全绿不等于系统能用**。72 道 dev 题都是我们自己写的、
 > 写完就照着它调参，所以另有一套`tests/eval_holdout.json`（31 题，指纹锁死）。
 > 它第一次跑就抓到"该拒答 0/3"——见 `docs/07-测试与验收规范.md`。
 > 改检索/阈值/领域词表后，**dev 集调参 → 留出集只跑一次**，别拿留出集当调参靶子。
@@ -117,20 +118,23 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（12 个套件；其中 9 个逐条计数，共 114 条用例）
+# 跑全部测试（15 个套件；其中 12 个逐条计数，共 188 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
-.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（49 题，不需要 Ollama，秒级）
+.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（72 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
 .venv\Scripts\python.exe tests\test_scope.py
 .venv\Scripts\python.exe tests\test_guard.py
 .venv\Scripts\python.exe tests\test_normalize.py
 .venv\Scripts\python.exe tests\test_edge_cases.py
+.venv\Scripts\python.exe tests\test_quality_gate.py   # 质量自检三态 + 版本号单一来源
 .venv\Scripts\python.exe tests\test_revert.py        # 用临时库，不动真实数据
 .venv\Scripts\python.exe tests\test_streaming.py
 .venv\Scripts\python.exe tests\test_export.py
 .venv\Scripts\python.exe tests\test_frontend.py      # 需要 Node + Chrome
 .venv\Scripts\python.exe tests\test_eval_discipline.py  # 留出集纪律（防"照着测试集调参"）
 .venv\Scripts\python.exe tests\test_devlog.py        # 开发日志读写（临时目录）
+.venv\Scripts\python.exe tests\test_level_denial.py  # 等级判定矩阵（锚点闭集 + 回答侧兜底，不需要 Ollama）
+.venv\Scripts\python.exe tests\test_answer_render.py # 服务端答案拼装与概述过滤（模型不再写正文）
 
 # 起服务 / 健康检查
 .venv\Scripts\python.exe -m app.main

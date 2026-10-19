@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -207,23 +210,28 @@ def test_salvage_answer_field():
     return check(ok, "只认 answer 字段，其余一概不救", f"抢救结果={got!r} 误救={mis_saved}")
 
 
-@case("模型输出被截断时，不把原始 JSON 端给用户，且引用不丢")
+@case("模型输出被截断时，不把原始 JSON 端给用户，也不用模型写的正文")
 def test_truncated_json_salvage():
     with patch(llm, "chat", lambda *a, **k: _BROKEN_JSON):
         r = answer_question("客户的手机号存在数据库里没有加密")
 
     ans = r["answer"]
+    # t28：模型不再写答案正文。截断的 JSON 里那半句 answer 属于"模型自由文本"，
+    # 现在一律不采用——正文由服务端按条款拼装。所以这里反过来断言：
+    # 救出来的那半句**不许**出现，但条款清单必须照常给全。
     ok = (
         "citations" not in ans          # 不得泄漏结构字段名
         and "{" not in ans              # 不得出现花括号
-        and _BROKEN_ANSWER in ans       # 正文要被救回来
+        and _BROKEN_ANSWER not in ans   # 模型自由文本不采用（t28 反转）
+        and "8.1.4." in ans             # 条款编号照常出现
+        and "不构成正式测评结论" in ans  # 服务端收尾照常
         and len(r["citations"]) > 0     # **引用必须兜底补上**
         and r["found"] is True
     )
     return check(
         ok,
-        f"已抢救出正文并补上 {len(r['citations'])} 条引用",
-        f"抢救失败：answer={ans[:80]!r} 引用数={len(r['citations'])}",
+        f"模型正文未采用，改为列出 {len(r['citations'])} 条条款",
+        f"处理失败：answer={ans[:80]!r} 引用数={len(r['citations'])}",
     )
 
 
@@ -236,7 +244,7 @@ def test_truncated_json_unrecoverable():
     ok = (
         "{" not in ans
         and len(r["citations"]) > 0
-        and any("未能抢救出正文" in n for n in r["notes"])
+        and any("不是合法 JSON" in n for n in r["notes"])
     )
     return check(ok, "已改为列出检索到的条款", f"兜底失败：answer={ans[:80]!r} notes={r['notes']}")
 
@@ -485,9 +493,264 @@ def test_positional_rewrite_safety():
 
 
 # --------------------------------------------------------------------------
+# 13. 导入接口不接受带路径的文件名（路径穿越回归，对应 P0-1）
+# --------------------------------------------------------------------------
+class _FakeUpload:
+    """只带文件名的假 UploadFile：路由只用得到 filename 和 file 两个属性。"""
+
+    def __init__(self, filename: str):
+        import io
+
+        self.filename = filename
+        self.file = io.BytesIO(b"PROOF-OF-PATH-TRAVERSAL\n")
+
+
+class _NoIngest:
+    """护栏：走到导入就说明校验没拦住，立刻炸掉，避免污染真实知识库。"""
+
+    def import_standard_file(self, *args, **kwargs):
+        raise AssertionError("文件名校验没拦住，已经走到 import_standard_file")
+
+    def import_document(self, *args, **kwargs):
+        raise AssertionError("文件名校验没拦住，已经走到 import_document")
+
+    def rebuild_index(self):
+        pass
+
+
+def _probe_rejected_upload(raw_name: str, http_name: str | None = None) -> tuple[bool, str]:
+    """拿一个恶意文件名跑导入，返回 (是否被 400 守住, 说明)。
+
+    直调路由函数这一层必须覆盖：multipart 解析器有一条 IE6 兼容逻辑，会把
+    `C:\\...` 先截成 basename（python-multipart 的 `parse_options_header` 里
+    `val.split("\\\\")[-1]`），所以「Windows 绝对路径」这一写法在 HTTP 层根本
+    到不了路由。其余能穿透解析器的写法再补一层真实 HTTP 断言。
+
+    校验发生在建临时目录与备份之前，所以失败路径不应产生临时目录、备份或数据库改动。
+    """
+    import tempfile
+
+    from fastapi import FastAPI, HTTPException
+    from fastapi.testclient import TestClient
+
+    import app.backup as backup_mod
+    from app.routers import kb as kb_routes
+
+    problems: list[str] = []
+    created_dirs: list[Path] = []
+    real_mkdtemp = tempfile.mkdtemp
+
+    def spy_mkdtemp(*args, **kwargs):
+        path = real_mkdtemp(*args, **kwargs)
+        created_dirs.append(Path(path))
+        return path
+
+    # 若校验失效，这两个护栏保证测试会失败但不会往真实知识库里写东西
+    fake_backup = Path(tempfile.gettempdir()) / "kb_audit_fake_backup.db"
+    with (
+        patch(kb_routes, "ingest", _NoIngest()),
+        patch(backup_mod, "create_backup", lambda *a, **k: fake_backup),
+        patch(tempfile, "mkdtemp", spy_mkdtemp),
+    ):
+        # 第一层：直接调路由函数，原始文件名原样送达
+        try:
+            asyncio.run(kb_routes.import_file(_FakeUpload(raw_name)))
+        except HTTPException as exc:
+            if exc.status_code != 400:
+                problems.append(f"{raw_name!r} → {exc.status_code}，应为 400")
+        except Exception as exc:
+            problems.append(f"{raw_name!r} → 未预期异常 {type(exc).__name__}: {exc}")
+        else:
+            problems.append(f"{raw_name!r} → 没有被拒绝（返回 200）")
+
+        if created_dirs:
+            problems.append(f"校验未拦住，创建了临时目录：{created_dirs[0]}")
+
+        # 第二层：真实 HTTP（multipart 解析后能原样到达路由的写法）
+        if http_name is not None:
+            probe = FastAPI()
+            probe.include_router(kb_routes.router)
+            client = TestClient(probe, raise_server_exceptions=False)
+            resp = client.post(
+                "/api/kb/import", files={"file": (http_name, b"PROOF", "text/plain")}
+            )
+            if resp.status_code != 400:
+                problems.append(f"HTTP {http_name!r} → {resp.status_code}，应为 400")
+
+    # 没有文件逃出临时目录
+    escape_targets = [
+        Path("C:/Users/A/AppData/absolute.txt"),
+        Path.cwd() / "escaped.txt",
+        ROOT / "escaped.txt",
+        Path.cwd() / "c.txt",
+        ROOT / "c.txt",
+    ]
+    for target in escape_targets:
+        if target.exists():
+            problems.append(f"出现了逃逸文件：{target}")
+
+    if problems:
+        return False, "；".join(problems)
+    detail = f"{raw_name!r} 被 400 拒绝，未创建临时目录、无逃逸文件"
+    if http_name is not None:
+        detail += f"；HTTP 层 {http_name!r} 同样 400"
+    return True, detail
+
+
+@case(r"导入文件名 ..\..\..\escaped.txt → 400 且不写出临时目录")
+def test_import_filename_parent_traversal():
+    ok, detail = _probe_rejected_upload(
+        r"..\..\..\escaped.txt", r"..\..\..\escaped.txt"
+    )
+    return check(ok, detail, detail)
+
+
+@case(r"导入文件名 C:\Users\A\AppData\absolute.txt → 400 且不写盘")
+def test_import_filename_windows_absolute():
+    # 反斜杠写法经 multipart 解析会被截成 basename，所以这一条只能直调路由函数
+    ok, detail = _probe_rejected_upload(r"C:\Users\A\AppData\absolute.txt")
+    return check(ok, detail, detail)
+
+
+@case("导入文件名 a/b/../../c.txt → 400 且不写出临时目录")
+def test_import_filename_posix_subdir():
+    ok, detail = _probe_rejected_upload("a/b/../../c.txt", "a/b/../../c.txt")
+    return check(ok, detail, detail)
+
+
+@case("正常的文件名仍按原后缀导入，落盘路径留在临时目录内")
+def test_import_normal_filenames_still_work():
+    import shutil as _shutil
+    import tempfile
+
+    from app.routers import kb as kb_routes
+
+    expected = {
+        "自查报告.pdf": ".pdf",
+        "制度汇编.docx": ".docx",
+        "note.md": ".md",
+        "清单.txt": ".txt",
+        "kb.json": ".json",
+    }
+    for raw, want in expected.items():
+        name, suffix = kb_routes._safe_upload_name(raw)
+        if suffix != want or not name.startswith("upload_") or not name.endswith(want):
+            return False, f"{raw} → 文件名={name!r} 后缀={suffix!r}，期望后缀 {want}"
+        if "报告" in name or "清单" in name:
+            return False, f"{raw} → 落盘文件名仍带用户原文：{name}"
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="kb_audit_"))
+    try:
+        name, _ = kb_routes._safe_upload_name("自查报告.pdf")
+        path = kb_routes._safe_tmp_path(tmp_dir, name)
+        inside = path.parent == tmp_dir.resolve()
+    finally:
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return check(
+        inside,
+        "五种常见后缀均被接受；落盘文件名由服务端生成，路径留在临时目录内",
+        f"落盘路径跑出了临时目录：{path}",
+    )
+
+
+# --------------------------------------------------------------------------
+# 13b. 上传后缀白名单（对应 t12）
+# --------------------------------------------------------------------------
+@case("上传只接受文档类后缀：脚本 / 可执行 / 无后缀一律 400")
+def test_import_suffix_whitelist():
+    from fastapi import HTTPException
+
+    from app.routers import kb as kb_routes
+
+    rejected = ["x.sh", "x.exe", "x.bat", "x.ps1", "x"]
+    for raw in rejected:
+        try:
+            name, _suffix = kb_routes._safe_upload_name(raw)
+        except HTTPException as exc:
+            if exc.status_code != 400:
+                return False, f"{raw} 被拒但状态码是 {exc.status_code}"
+            if "只接受" not in str(exc.detail):
+                return False, f"{raw} 的提示不可读：{exc.detail}"
+            continue
+        return False, f"{raw} 没有被拒绝，落盘名是 {name!r}"
+
+    accepted = {
+        "a.PDF": ".pdf",
+        "b.docx": ".docx",
+        "c.txt": ".txt",
+        "d.doc": ".doc",
+        "e.md": ".md",
+        "f.json": ".json",
+    }
+    for raw, want in accepted.items():
+        name, suffix = kb_routes._safe_upload_name(raw)
+        if suffix != want or not name.startswith("upload_") or not name.endswith(want):
+            return False, f"{raw} → {name!r} 后缀 {suffix!r}，期望 {want}"
+
+    return True, f"拒绝 {rejected}；接受 {list(accepted)}（大写后缀归一到小写）"
+
+
+# --------------------------------------------------------------------------
+# 14. CORS 只放行同源（对应 P0-2）
+# --------------------------------------------------------------------------
+@case("CORS 只放行本机同源，不再允许任意网页跨源读取")
+def test_cors_not_wildcard():
+    from fastapi.testclient import TestClient
+
+    import app.main as main_mod
+
+    allowed = f"http://127.0.0.1:{config.APP_PORT}"
+    client = TestClient(main_mod.app)
+    preflight = {"Access-Control-Request-Method": "GET"}
+
+    evil = client.options(
+        "/api/sessions", headers={**preflight, "Origin": "https://evil.example"}
+    )
+    same = client.options("/api/sessions", headers={**preflight, "Origin": allowed})
+
+    evil_acao = evil.headers.get("access-control-allow-origin")
+    same_acao = same.headers.get("access-control-allow-origin")
+
+    if evil_acao is not None:
+        return False, f"恶意来源仍拿到 ACAO={evil_acao!r}"
+    if same_acao != allowed:
+        return False, f"同源预检没有放行（ACAO={same_acao!r}）"
+    return True, f"恶意来源无 ACAO；同源 {allowed} 正常放行"
+
+
+# --------------------------------------------------------------------------
 # runner
 # --------------------------------------------------------------------------
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _use_temp_db() -> tuple[Path, Path, str]:
+    """把 DB 指到真实库的临时副本，返回 (临时目录, 真实库路径, 跑之前的哈希)。
+
+    为什么非改不可：本套件会写会话与消息，旧版直接跑在 data/app.db 上，
+    实测把用户真实库的哈希从 4C3A32… 改成 8E83E4…。
+    一边修「假绿」一边污染用户数据，说不过去。
+    """
+    real = Path(config.DB_PATH)
+    real_hash = _sha256(real) if real.exists() else ""
+    tmp_dir = Path(tempfile.mkdtemp(prefix="edge_cases_db_"))
+    tmp_db = tmp_dir / "app.db"
+    for suffix in ("", "-wal", "-shm"):
+        src = Path(str(real) + suffix)
+        if src.exists():
+            shutil.copy2(src, Path(str(tmp_db) + suffix))
+    config.DB_PATH = tmp_db
+    return tmp_dir, real, real_hash
+
+
 def main() -> int:
+    tmp_dir, real_db, real_hash_before = _use_temp_db()
     db.init_db()
     logging_setup.setup_logging()
 
@@ -519,6 +782,21 @@ def main() -> int:
                 conn.execute("DELETE FROM messages WHERE session_id = ?", (row["id"],))
                 conn.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
 
+    # 真实库必须一个字节都没变（F4：测试不许污染用户数据）
+    real_hash_after = _sha256(real_db) if real_db.exists() else ""
+    real_ok = real_hash_after == real_hash_before
+    print(f"{'OK ' if real_ok else 'XX '}真实库未被测试改动：{real_db}")
+    if real_ok:
+        detail = f"哈希未变（{real_hash_after[:6] or '空库'}…）"
+    else:
+        detail = f"哈希变了：{real_hash_before[:8]} → {real_hash_after[:8]}"
+    print(f"     {detail}")
+    if real_ok:
+        passed += 1
+    else:
+        failed += 1
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
     print("=" * 78)
     print(f"通过 {passed} / {passed + failed}")
     return 0 if failed == 0 else 1

@@ -1,7 +1,13 @@
 name: CI
 
-# 跑什么：11 个自动化套件（134 个用例）+ dev 集 49 题 + 留出集 31 题。
+# 跑什么：14 个自动化套件（逐条计数，共 166 条用例，具体条数以各文件输出为准）+ dev 集 72 题 + 留出集 31 题。
 # 都不需要 Ollama——测试里对大模型的调用一律打桩，见 CLAUDE.md 的铁律三。
+#
+# ⚠️ 覆盖缺口（明确降级声明，不是疏忽）：端到端 / 提示词层不在这里跑。
+# run_eval.py 只用 --no-llm，只查检索与判定规则；第二层要真起 Ollama 才能测
+# "模型会不会先追问、会不会把库外法规当成标准原文"，CI runner 上没有 Ollama。
+# 本地发版前必须手工跑一次不带 --no-llm 的 `python tests/run_eval.py`
+# （退出码 3 = 第二层应跑未跑，不算达标），并把结果贴进 devlog。
 #
 # 需要联网的只有一处：fastembed 要下载语义模型（BAAI/bge-small-zh-v1.5，约 95 MB）。
 # 用 actions/cache 缓存 data/models，正常情况下只在缓存过期时下一次。
@@ -69,7 +75,7 @@ jobs:
       - name: 静态检查（最先跑）
         run: python tests/check_syntax.py
 
-      - name: 检索与判定质量（49 题，不上大模型）
+      - name: 检索与判定质量（dev 集 72 题，不上大模型；端到端不在此运行）
         env:
           HF_MIRROR: https://huggingface.co
         run: python tests/run_eval.py --no-llm
@@ -92,6 +98,25 @@ jobs:
 
       - name: 异常路径
         run: python tests/test_edge_cases.py
+
+      - name: 质量自检三态与版本号单一来源
+        # 钉住"自检自己崩了"这条最不该骗人的路径：passed 必须是三态
+        # （True/False/None），崩溃时是 None 而不是 True。也钉住 openapi 与
+        # /api/health 的版本号来自同一处 config.APP_VERSION。
+        run: python tests/test_quality_gate.py
+
+      - name: 等级判定矩阵（锚点闭集 + 回答侧兜底）
+        # t20 新增这一套时只写进了本机命令清单，漏了 ci.yml——和 test_quality_gate.py
+        # 当初漏掉是同一个病：不进 CI 的回归测试等于不存在。它用 llm_calls==0 打桩，
+        # 不需要 Ollama，240 句矩阵是运行时现算的，整份都在 runner 上跑。
+        run: python tests/test_level_denial.py
+
+      - name: 服务端答案拼装与概述过滤
+        # 答案正文由 app/answer.py 拼装，模型只输出结构化字段。这一套钉住两件事：
+        # ①概述（summary）命中等级/档位/第二人称/判定词就整条丢弃，条款清单照常渲染；
+        # ②接地判据——概述的实词必须与被引条款有交集，空话不许混进来。
+        # 它同时是"过滤掉了也不能让答案少东西"的守卫，所以放在等级矩阵之后。
+        run: python tests/test_answer_render.py
 
       - name: 导入与撤销
         run: python tests/test_revert.py

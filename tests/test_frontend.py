@@ -45,6 +45,64 @@ AXE = ROOT / "tests" / "vendor" / "axe.min.js"
 PROBE = ROOT / "tests" / "frontend_probe.js"
 CDP = ROOT / "tools" / "cdp_eval.js"
 
+# 存储型 XSS 回归探针：source_url 是随导入 JSON 一起进库、并且会被持久化的字段，
+# 重开会话时还会再渲染一次。这里用一个带引号和 onmouseover 的地址去喂
+# renderCitations()，断言"属性逃逸"和"javascript: 链接"两条路都走不通，
+# 顺带验证引用卡片头是真 button、aria-expanded 跟得上。
+# 单独一个文件而不是塞进 frontend_probe.js：那个探针只取"页面长什么样"的事实，
+# 这个是往页面里塞攻击载荷，两者混在一起会让普通探测也带上副作用。
+XSS_PROBE_JS = r'''
+(async () => {
+  const out = {};
+  out.escQuote = esc('a"b\'c');
+  out.escTag = esc('<img src=x onerror=1>');
+
+  const host = document.getElementById('chatScroll');
+  if (!host) return { fatal: '页面上没有 #chatScroll' };
+
+  const fake = (url) => ([{
+    clause_id: 'X-1', standard_name: '测试标准', title: '标题',
+    chapter_path: ['第 1 章'], risk_tags: [], text: '条文正文',
+    source_url: url, source_kind: 'user', text_type: 'summary',
+  }]);
+
+  // 1) 属性逃逸：引号 + 事件处理器
+  const box = document.createElement('div');
+  host.appendChild(box);
+  renderCitations(box, fake('https://example.com/a" onmouseover="window.__PWN=1" data-x="'));
+  const a1 = box.querySelector('a');
+  out.hasAnchor = !!a1;
+  out.attrs = a1 ? Array.from(a1.attributes).map((x) => x.name) : [];
+  out.href = a1 ? a1.getAttribute('href') : null;
+  out.pwn = window.__PWN === 1;
+
+  // 2) javascript: 协议不能变成可点链接
+  const box2 = document.createElement('div');
+  host.appendChild(box2);
+  renderCitations(box2, fake('javascript:window.__PWN=2'));
+  out.jsAnchor = !!box2.querySelector('a');
+  out.jsPlain = !!box2.querySelector('.src-link.is-plain');
+  out.jsPwn = window.__PWN === 2;
+
+  // 3) 引用卡片头必须是真按钮，aria-expanded 跟着开合走
+  const head = box.querySelector('.cite-head');
+  out.headTag = head ? head.tagName : null;
+  out.headTabIndex = head ? head.tabIndex : -1;
+  out.ariaBefore = head ? head.getAttribute('aria-expanded') : null;
+  out.controls = head ? head.getAttribute('aria-controls') : null;
+  out.bodyExists = !!(out.controls && document.getElementById(out.controls));
+  if (head) head.click();
+  out.ariaAfter = head ? head.getAttribute('aria-expanded') : null;
+  out.cardOpen = !!box.querySelector('.cite-card.open');
+  out.bodyVisible = out.bodyExists
+    && getComputedStyle(document.getElementById(out.controls)).display !== 'none';
+
+  box.remove();
+  box2.remove();
+  return out;
+})()
+'''
+
 
 def case(name: str):
     def wrapper(fn):
@@ -185,6 +243,27 @@ def _probe(node: str, base: str, path: str, *, mobile: bool, out: Path) -> dict:
     data = json.loads(out.read_text(encoding="utf-8"))
     if not data.get("ok"):
         raise RuntimeError(f"页面探针失败：{data.get('error')}")
+    return data["value"]
+
+
+def _probe_script(node: str, base: str, path: str, script: Path, out: Path) -> dict:
+    """用一次性脚本跑一次探针（XSS 回归要往页面里塞载荷，不能混进 frontend_probe.js）。"""
+    cmd = [
+        node, str(CDP),
+        "--url", base + path,
+        "--script", str(script),
+        "--settle", "2500",
+        "--out", str(out),
+    ]
+    proc = subprocess.run(cmd, cwd=str(ROOT), capture_output=True, text=True, timeout=240)
+    if not out.exists():
+        raise RuntimeError(
+            f"cdp_eval 没写出结果文件（退出码 {proc.returncode}）\n"
+            f"  stdout: {proc.stdout[-600:]}\n  stderr: {proc.stderr[-600:]}"
+        )
+    data = json.loads(out.read_text(encoding="utf-8"))
+    if not data.get("ok"):
+        raise RuntimeError(f"XSS 探针失败：{data.get('error')}")
     return data["value"]
 
 
@@ -358,6 +437,44 @@ def t_mobile_drawer():
     return (True, f"打开后侧栏 left={d['left']}px，aria-expanded=true，点遮罩已收回")
 
 
+@case("引用链接：source_url 注入不生效，卡片头是键盘可达的按钮（存储型 XSS 回归）")
+def t_cite_xss():
+    p = ENV.get("xss") or {}
+    if not p:
+        return (False, "XSS 探针没有采集到结果")
+    if p.get("fatal"):
+        return (False, p["fatal"])
+    problems = []
+    if "&quot;" not in p.get("escQuote", "") or "&#39;" not in p.get("escQuote", ""):
+        problems.append(f"esc() 没有转义引号（实际 {p.get('escQuote')!r}）")
+    if "&lt;" not in p.get("escTag", ""):
+        problems.append(f"esc() 没有转义尖括号（实际 {p.get('escTag')!r}）")
+    if p.get("pwn") or p.get("jsPwn"):
+        problems.append("注入的事件处理器被执行了（window.__PWN 被置位）")
+    bad = [n for n in p.get("attrs", []) if n.lower().startswith("on")]
+    if bad:
+        problems.append(f"<a> 上出现了事件处理器属性：{bad}")
+    if p.get("jsAnchor"):
+        problems.append("javascript: 协议的 source_url 仍然生成了 <a>")
+    if not p.get("jsPlain"):
+        problems.append("javascript: 协议没有降级成纯文本展示")
+    if p.get("headTag") != "BUTTON":
+        problems.append(f"引用卡片头不是 button（实际 {p.get('headTag')}），键盘展开不了")
+    elif p.get("headTabIndex", -1) < 0:
+        problems.append("引用按钮不在 Tab 序列里")
+    if p.get("ariaBefore") != "false" or p.get("ariaAfter") != "true":
+        problems.append(f"aria-expanded 没有同步（{p.get('ariaBefore')} → {p.get('ariaAfter')}）")
+    if not p.get("bodyExists"):
+        problems.append("aria-controls 指向的元素不存在")
+    if not p.get("cardOpen") or not p.get("bodyVisible"):
+        problems.append("点击后条文正文没有展开")
+    if problems:
+        return (False, "；".join(problems))
+    return (True,
+            f"esc 转义引号与尖括号、链接属性 {p.get('attrs')} 无 on*、"
+            f"javascript: 已降级为纯文本、卡片头 BUTTON 且 aria-expanded false→true")
+
+
 # ---------------------------------------------------------------- 主流程
 
 def main() -> int:
@@ -396,6 +513,10 @@ def main() -> int:
             label = f"{path}{' @390px' if mobile else ' @桌面'}"
             print(f"  正在采集 {label} …")
             ENV[key] = _probe(node, base, path, mobile=mobile, out=tmp / f"{key}.json")
+        print("  正在采集 引用链接 XSS 回归 …")
+        xss_js = tmp / "xss_probe.js"
+        xss_js.write_text(XSS_PROBE_JS, encoding="utf-8")
+        ENV["xss"] = _probe_script(node, base, "/", xss_js, tmp / "xss.json")
         print()
     except Exception:
         print("采集阶段出错：")

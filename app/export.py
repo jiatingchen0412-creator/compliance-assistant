@@ -25,6 +25,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.oxml.ns import qn
 from docx.shared import Cm, Pt, RGBColor
 
+from . import guard
+
 CN_FONT = "微软雅黑"
 MONO_FONT = "Consolas"
 
@@ -37,6 +39,14 @@ DISCLAIMER = (
     "用于辅助自查参考，不构成正式测评结论，也不构成法律意见。"
     "涉及数据加密、访问控制、个人信息保护等高风险事项，"
     "建议咨询专业安全顾问或有资质的等保测评机构。"
+)
+
+# H-5：报告是要发给顾问、老板、客户的，正文里如果混着编造的条款编号，
+# 出去以后没人能发现。所以核对提示必须放在封面，而且逐条回答里也要标。
+VERIFY_HINT = (
+    "本报告中的条款编号都以本机知识库的检索结果为准。"
+    "正文里标了「请核实」的编号没能与知识库匹配，可能是模型编造的，"
+    "请不要直接把它当成标准原文引用。"
 )
 
 
@@ -125,7 +135,9 @@ def build_report(session_title: str, session_id: str, messages: list[dict],
 
     _para(doc, "", space_after=30)
     _para(doc, "责任声明", size=11, bold=True, color=WARN, space_after=4)
-    _para(doc, DISCLAIMER, size=9.5, color=GREY, space_after=0)
+    _para(doc, DISCLAIMER, size=9.5, color=GREY, space_after=10)
+    _para(doc, "编号核对（请先读这一段）", size=11, bold=True, color=WARN, space_after=4)
+    _para(doc, VERIFY_HINT, size=9.5, color=GREY, space_after=0)
 
     doc.add_page_break()
 
@@ -179,6 +191,17 @@ def build_report(session_title: str, session_id: str, messages: list[dict],
                 _para(doc, line.strip(), size=10.5, indent=0.4, space_after=3)
 
         citations = m.get("citations") or []
+        # H-5：正文里出现没在引用里的编号 → 就在这一条回答下面标出来。
+        # 不能等到附录再提：附录只列"引用条款"，编造的那些编号根本不会进附录，
+        # 于是报告正文带着 8.9.9.9 一起发出去，收报告的人无从核对。
+        suspicious = guard.detect_hallucinated_ids(answer, citations)
+        if suspicious:
+            _para(
+                doc,
+                "⚠️ 请核实：" + "、".join(suspicious[:5])
+                + " 不在本次引用的知识库条款中，编号可能有误，请以官方标准文本为准。",
+                size=10, color=WARN, indent=0.4, space_after=6,
+            )
         if citations:
             _para(doc, "引用条款", size=11, bold=True, space_after=3)
             for c in citations:

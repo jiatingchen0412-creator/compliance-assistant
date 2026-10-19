@@ -24,6 +24,7 @@ from typing import Any, Callable, Iterator
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from .. import answer as answer_mod
 from .. import config, db, guard, llm, prompt, scope
 from ..logging_setup import log_qa
 from ..models import ChatRequest
@@ -118,6 +119,23 @@ def _history(session_id: str, limit: int = 6) -> list[dict]:
     return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
 
+def _recent_user_text(session_id: str, limit: int = 4) -> str:
+    """取最近几轮**用户说过的话**（不含本轮），给多轮话题延续用。
+
+    注意先保存本轮问题再调这里，所以结果里第一条就是本轮——
+    跳过它，免得"本轮提到库外法规"被自己当成"上一轮提到过"。
+    历史关闭（SAVE_HISTORY=false）时查不到东西，返回空串：
+    没有记忆就不做跨轮推断，这比假装记得更诚实。
+    """
+    rows = db.query(
+        "SELECT content FROM messages WHERE session_id = ? AND role = 'user' "
+        "ORDER BY id DESC LIMIT ?",
+        (session_id, limit + 1),
+    )
+    return "\n".join(str(r["content"]) for r in reversed(rows[1:]))
+
+
+
 # --------------------------------------------------------------------------
 # 核心问答
 # --------------------------------------------------------------------------
@@ -131,14 +149,14 @@ def answer_question(
     session_id: str | None = None,
     on_delta: Callable[[str], None] | None = None,
     on_stage: Callable[[str, dict], None] | None = None,
+    on_preface: Callable[[str], None] | None = None,
 ) -> dict:
     """处理一次提问，返回完整结果。
 
-    on_delta 传入时启用真流式：模型边生成，边把 answer 的增量回调出去。
-    注意流式只是"提前把文字给用户看"，**所有校验（引用白名单、⚠️判定、
-    矛盾清理）仍然在生成结束后照常执行**，不因为流式而放松。
-
-    on_stage 用于把中间进度（比如"命中了哪条条款"）报给前端。
+    t28 起模型不再生成答案正文：正文由 app/answer.py 按固定结构拼装。
+    - on_preface 把"服务端拼好的条款清单"推给流式接口，用于首屏（不等模型）；
+    - on_delta 保留参数只为兼容调用方，模型已没有可流式展示的正文。
+    所有校验（引用白名单、风险、澄清）仍在拼装前后照常执行。
     """
     t0 = time.time()
 
@@ -188,8 +206,24 @@ def answer_question(
     #   ① 用户点名了知识库未收录的法规 → 模型会凭记忆编它的条文
     #   ② 要求判断条款适用性 → 模型会把检索到的条款号当成"不适用清单"吐出来
     # 判定全部由代码做（app/scope.py），不依赖模型自觉。
-    undeterminable, undet_reason = scope.needs_system_context(question)
+    recent_user_text = _recent_user_text(sid)
+    # 第五轮：多轮追问也要拦。用户第二轮只说「就按这个来建设吧」，本轮没有
+    # 等级词，但上一轮问的是"定到哪一级"——把上一轮原文交给判定，避免漏判。
+    undeterminable, undet_reason = scope.needs_system_context(
+        question, recent_user_text
+    )
     out_of_kb = scope.detect_out_of_kb(question)
+    if not out_of_kb:
+        # H-3 多轮绕过：上一轮点名了库外法规、本轮只问「第十三条怎么规定的」时，
+        # 问题里已经没有法规名了。只查问题不查会话，等于第一轮的拦截白做。
+        carried = scope.followup_out_of_kb(question, recent_user_text)
+        if carried:
+            out_of_kb = carried
+            notes.append(
+                "本轮问题没有点名法规，但上一轮提到过 "
+                + "、".join(d["name"] for d in carried)
+                + "，已继续按『知识库未收录』处理"
+            )
     out_of_kb_names = [d["name"] for d in out_of_kb]
 
     # ---- 领域边界：根本不属于网络安全合规的问题 ----
@@ -210,6 +244,27 @@ def answer_question(
             "mode": "out_of_domain",
             "out_of_kb": [],
             "notes": [f"领域拦截：{domain_label}（{'、'.join(domain_terms)}）"],
+        }
+        _save_message(sid, "assistant", result["answer"], _payload(result))
+        log_qa(log, question, result, time.time() - t0)
+        return result
+
+    # ---- 知识库完全没有的话题（价格 / 机构 / 通过率）：服务端直接答，不调模型 ----
+    # 这几类问题的正确答案不在三套技术标准里，模型只能编数字、编机构名、编周期。
+    # 检索分数还可能很高（"合规要花很多钱吗"语义上很像"合规成本"），阈值拦不住。
+    no_kb_topic = scope.detect_no_kb_topic(question)
+    if no_kb_topic:
+        result = {
+            "session_id": sid,
+            "answer": guard.ensure_disclaimer(scope.no_kb_topic_notice(no_kb_topic)),
+            "citations": [],
+            "risks": [],
+            "need_clarification": False,
+            "followup_questions": [],
+            "found": False,
+            "mode": "no_kb_topic",
+            "out_of_kb": [],
+            "notes": [f"知识库不含「{no_kb_topic}」的信息，已直接说明，未调模型"],
         }
         _save_message(sid, "assistant", result["answer"], _payload(result))
         log_qa(log, question, result, time.time() - t0)
@@ -243,10 +298,19 @@ def answer_question(
     if undeterminable:
         ref_clauses = clauses[:5]
         cited = [c["clause_id"] for c in ref_clauses]
+        ctx_notes = [
+            f"这类问题需要结合您的系统情况逐条比对才能判断（{undet_reason}），"
+            f"已直接说明并给出追问，未让大模型硬凑一份清单"
+        ]
+        if out_of_kb_names:
+            # H-6：这个分支也点名了库外法规，声明必须一样拼在最前面
+            ctx_notes.append(
+                "用户点名了知识库未收录的法规：" + "、".join(out_of_kb_names)
+            )
         result = {
             "session_id": sid,
             "answer": guard.ensure_disclaimer(
-                scope.needs_context_answer(undet_reason, ref_clauses)
+                scope.needs_context_reply(undet_reason, ref_clauses, out_of_kb_names)
             ),
             "citations": [guard.to_citation(c) for c in ref_clauses],
             "risks": guard.detect_risks(question, clauses, None, cited_ids=cited),
@@ -255,10 +319,7 @@ def answer_question(
             "found": True,
             "mode": "needs_context",
             "out_of_kb": out_of_kb_names,
-            "notes": [
-                f"这类问题需要结合您的系统情况逐条比对才能判断（{undet_reason}），"
-                f"已直接说明并给出追问，未让大模型硬凑一份清单"
-            ],
+            "notes": ctx_notes,
             "retrieved": _retrieved(clauses),
         }
         _save_message(sid, "assistant", result["answer"], _payload(result))
@@ -297,32 +358,32 @@ def answer_question(
     )
     data: dict | None = None
     mode = "llm"
+
+    # ---- 首屏：服务端先把条款清单拼好推给流式接口（不等模型）----
+    # t28：模型不再写答案正文，正文由 app/answer.py 拼装。所以"第一段能显示的
+    # 文字"完全不依赖模型，检索完就能发，首字延迟从模型的几秒降到毫秒级。
+    if on_preface is not None:
+        try:
+            on_preface(answer_mod.render_preface(clauses))
+        except Exception as exc:  # 首屏回调失败不能影响主流程
+            log.debug("首屏回调失败：%s", exc)
+
     try:
-        use_stream = on_delta is not None and config.ENABLE_TRUE_STREAMING
-        if use_stream:
-            raw = llm.chat_stream_json(messages, prompt.ANSWER_SCHEMA, on_delta)
-        else:
-            raw = llm.chat(messages, json_schema=prompt.ANSWER_SCHEMA)
+        # 不再用流式解码：模型只返回结构化字段，没有可流式展示的正文。
+        raw = llm.chat(messages, json_schema=prompt.ANSWER_SCHEMA)
         data = llm.parse_json_loose(raw)
         if data is None:
-            notes.append("模型输出不是合法 JSON，已按纯文本处理")
-            # 实测模型会在 risk_tags 这类长数组里进入重复循环、输出被截断，
-            # 于是整个 JSON 解析失败。此时**绝不能把原始文本直接当正文**：
-            # 用户会看到一大坨花括号结构，答案被埋在中间，引用还全丢了。
-            # 先尝试只把 answer 字段救出来；救不出来就留空，
-            # 下面会走 degradation_answer（并因此补上检索到的条款引用）。
-            salvaged = llm.salvage_answer_field(raw)
-            if salvaged:
-                notes.append("已从异常输出中抢救出正文，其余字段（引用、风险标签）按检索结果补齐")
-            else:
-                notes.append("异常输出中未能抢救出正文，已改为列出检索到的条款")
+            mode = "retrieval_only"
+            notes.append(
+                "模型输出不是合法 JSON，已忽略其中的自由文本，改为直接列出检索到的条款"
+            )
             data = {
-                "answer": salvaged or "",
-                "citations": [],
+                "found": True,
+                "clauses": [],
+                "summary": None,
                 "risk_tags": [],
                 "need_clarification": False,
                 "followup_questions": [],
-                "found": True,
             }
     except llm.LLMUnavailable as exc:
         mode = "retrieval_only"
@@ -331,54 +392,154 @@ def answer_question(
         if exc.hint:
             notes.append(exc.hint)
         data = {
-            "answer": prompt.degradation_answer(clauses, str(exc)),
-            "citations": [],
+            "found": True,
+            "clauses": [],
+            "summary": None,
             "risk_tags": [],
             "need_clarification": False,
             "followup_questions": [],
-            "found": True,
         }
 
-    # ---- 引用白名单校验 ----
-    valid_citations, invalid_ids = guard.validate_citations(data.get("citations"), clauses)
+    # ---- 诚实优先：模型说「知识库中没找到」就采信它（P0-4）----
+    # 旧实现反过来：不管模型说什么都置 found=True，再把模型说的
+    # 「知识库中未找到」整句删掉、回填 5 条引用。那是把诚实改成不诚实——
+    # 用户看到的是"已找到依据"，而模型当时说的是"我没找到"。
+    model_found = bool(data.get("found", True))
+    found = model_found
+    if not found:
+        notes.append("模型判断知识库中没有能回答这个问题的条款，已如实保留该结论（未回填引用）")
+
+    # ---- 引用白名单校验（t28：引用由服务端从模型挑出的 clauses 派生）----
+    valid_citations, invalid_ids = guard.validate_citations(data.get("clauses"), clauses)
+
+    # ---- 兼容垫片：模型若仍按旧习惯返回已删除的字段 ----
+    # t28 的 schema 里已经没有 answer / citations。但小模型可能照旧返回它们。
+    # 这里**绝不把它们当正文或引用使用**（用户看到的正文永远由服务端拼装），
+    # 只当作"模型想说什么"的信号：试图编编号 → 在正文里写引用核对；
+    # 试图下等级结论 → 整条降级为 needs_context。见下面两处使用。
+    legacy_answer = str(data.get("answer") or "")
+    _, legacy_invalid = guard.validate_citations(data.get("citations"), clauses)
+    if legacy_invalid:
+        invalid_ids = list(
+            dict.fromkeys([str(x) for x in invalid_ids] + [str(x) for x in legacy_invalid])
+        )
     if invalid_ids:
-        notes.append("已剔除不在本次检索结果中的条款编号：" + "、".join(invalid_ids[:5]))
+        notes.append(
+            "已剔除不在本次检索结果中的条款编号："
+            + "、".join(invalid_ids[:5])
+            + "（模型只能从【可用条款】里挑）"
+        )
 
-    answer_text = guard.strip_markdown_headings(str(data.get("answer") or "").strip())
-    # 把模型可能写的「条款1」翻译成真实条款编号，再让用户看到
-    answer_text = guard.rewrite_positional_refs(answer_text, clauses)
-    if not answer_text:
-        answer_text = prompt.degradation_answer(clauses, "模型返回了空内容")
-        mode = "retrieval_only"
+    # ---- summary：模型唯一可能带回来的自由文本，用「整体拒绝」过滤 ----
+    # 命中任何一条判据就整条丢掉，条款清单与收尾完全不受影响。
+    summary, reject_reason = answer_mod.filter_summary(data.get("summary"), clauses)
+    raw_summary = str(data.get("summary") or "").strip()
+    if reject_reason and raw_summary:
+        notes.append(f"模型给的一句话概述被整条丢弃（{reject_reason}）；条款清单照常显示")
+        log.info("summary 被拒绝 · %s · %r", reject_reason, raw_summary[:60])
 
-    # 引用兜底：**只要有检索结果、而模型一个可用引用都没给出，就用检索到的条款补上。**
-    # 触发场景有三种：大模型不可用、模型返回空内容、模型的 JSON 坏了导致 citations 全丢。
-    # 最后一种曾经漏掉——那时 mode 仍然是 "llm"，旧的 `mode == "retrieval_only"`
-    # 条件不成立，用户会看到一段**没有任何出处的结论**。
-    # 用户的第一条硬性要求就是"回答要带引用来源"，所以这里的判据应该是
-    # "没有可用引用"，而不是"处于降级模式"。
-    if not valid_citations and clauses:
+    # ---- 答案正文：服务端按固定结构拼装，模型写的任何正文都不采用 ----
+    if found:
+        answer_text = answer_mod.render(
+            question,
+            clauses,
+            summary=summary,
+            risk_tags=data.get("risk_tags") or [],
+            mode=mode,
+        )
+    else:
+        answer_text = prompt.NO_RESULT_ANSWER
+
+    # 引用兜底：**只有当模型说找到了、却一个引用都没给时**才补检索到的条款。
+    # 触发场景：大模型不可用、模型返回空内容、模型的 JSON 坏了导致 citations 全丢。
+    # 两种情况下**故意不补**（P0-4/P0-5）：
+    #   ① 模型自己说没找到 → 补了就等于伪造依据；
+    #   ② 模型给了编号但全是编的 → 补 5 条真条款会让用户以为"我说的那条就在里面"。
+    if found and not valid_citations and clauses and not invalid_ids:
         valid_citations = [guard.to_citation(c) for c in clauses[:5]]
         if mode == "llm":
             notes.append("模型未给出可用的引用，已按本次检索结果补充参考条款")
 
-    hallucinated = guard.detect_hallucinated_ids(answer_text, clauses)
-    if hallucinated:
-        notes.append("正文中出现未在知识库检索到的编号，请核实：" + "、".join(hallucinated[:5]))
+    # t28：正文已不含模型自由文本，编号只可能来自知识库，所以不再扫正文编造号；
+    # 对不上的编号只可能来自模型挑的 clauses（已在上面剔进 invalid_ids）。
+    # 但"编号对不上"仍要在**回答正文**里说清楚，而不是只写进前端折叠的技术详情：
+    # 用户读到的是一段带编号的结论，他不会展开备注去发现编号对不上。
+    unmatched = [str(x) for x in invalid_ids]
+    citation_warning = ""
+    if unmatched:
+        citation_warning = (
+            "⚠️ 引用核对：回答里提到的 "
+            + "、".join(unmatched[:5])
+            + " 不在本次检索到的条款中，已从引用列表里剔除；"
+            "这部分内容没有知识库依据，请以官方标准文本为准，不要直接当成结论。"
+        )
 
     # ---- 库外法规：先清掉转述，再由服务端强制补上"未收录"说明 ----
     # 顺序很重要：先清模型写出来的东西，再拼服务端生成的说明。
     # 反过来的话，服务端那段说明自己带着法规名，会被清理逻辑误伤。
-    if out_of_kb:
-        answer_text, removed = guard.strip_out_of_kb_claims(answer_text, out_of_kb)
+    # H-2：问题里没点名、但**模型自己在回答里写了**库外法规时，同样要清、要声明。
+    # 旧实现只检测问题，模型自发引用《网络安全法》第21条既不清理也不加声明。
+    # 兼容垫片：模型旧的 answer 字段已经不会被展示，但如果它"试图"写了库外法规，
+    # 仍然要让用户知道本工具不覆盖这部法规（声明由服务端写，模型删不掉）。
+    answer_out_of_kb = scope.merge_out_of_kb(
+        scope.detect_out_of_kb(answer_text),
+        scope.detect_out_of_kb(legacy_answer) if legacy_answer else [],
+    )
+    all_out_of_kb = scope.merge_out_of_kb(out_of_kb, answer_out_of_kb)
+    if all_out_of_kb:
+        all_names = [d["name"] for d in all_out_of_kb]
+        answer_text, removed = guard.strip_out_of_kb_claims(answer_text, all_out_of_kb)
+        from_answer = bool(answer_out_of_kb) and not out_of_kb
         if removed:
             notes.append(
                 f"已删除 {removed} 处可能转述库外法规内容的表述（该法规未收录在知识库中）"
             )
-            log.info("已清理库外法规转述 · %d 处 · %s", removed, "、".join(out_of_kb_names))
-        notice = scope.out_of_kb_notice(out_of_kb_names)
+            log.info("已清理库外法规转述 · %d 处 · %s", removed, "、".join(all_names))
+        if from_answer:
+            notes.append(
+                "回答中出现了知识库未收录的法规（"
+                + "、".join(d["name"] for d in answer_out_of_kb)
+                + "），已清理并补上说明"
+            )
+        notice = scope.out_of_kb_notice(
+            all_names, from_answer=from_answer, removed=removed
+        )
         if notice:
             answer_text = notice + "\n" + answer_text
+        out_of_kb_names = all_names
+
+    # ---- 兜底：回答里出现清单之外的法规名 ----
+    # 清单是有限枚举，下一部没收录的法规照样可能被模型转述。这里按
+    # 「《…法/条例/规定/办法》」的结构再兜一层：不在已知别名里的，一律声明
+    # 不在本次检索范围。声明本身是服务端写的，模型删不掉。
+    known_law_names = [a for d in all_out_of_kb for a in d["all_aliases"]]
+    unsupported_laws = guard.detect_unsupported_law_names(answer_text, known_law_names)
+    if legacy_answer:
+        # 兼容垫片：模型在已废弃的 answer 字段里提到清单外法规，同样要声明一次。
+        unsupported_laws = list(
+            dict.fromkeys(
+                unsupported_laws
+                + guard.detect_unsupported_law_names(legacy_answer, known_law_names)
+            )
+        )
+    if unsupported_laws:
+        shown = "、".join(f"《{n}》" for n in unsupported_laws[:3])
+        notes.append(f"回答中出现清单外法规名：{shown}，已声明不在检索范围")
+        answer_text = (
+            f"⚠️ 说明：回答里提到的 {shown} 不在本工具的知识库（本次检索范围）内，"
+            "相关表述我无法核实，请以官方发布的标准文本为准。\n\n" + answer_text
+        )
+
+    # ---- RT18-06：正文里残留的「第X条…规定」条文转述 ----
+    # 知识库用的是 8.1.4.1 / PR.AA-01 / A01:2021 这类编号，没有「第X条」这种
+    # 形式。正文出现「第十三条规定…」几乎一定是模型凭记忆转述库外法规。
+    # 这种句子不能原样留给用户，也不能只写进前端折叠的"技术详情"——这里就地
+    # 标注"不是知识库依据"，标记由服务端写，模型删不掉。
+    answer_text, unverified_clauses = guard.annotate_unverified_clause_claims(answer_text)
+    if unverified_clauses:
+        notes.append(
+            f"回答中有 {unverified_clauses} 处「第X条」式条文转述，已标注为「不是知识库依据」"
+        )
 
     # ---- 是否要找用户补充信息 ----
     need_clarify = bool(data.get("need_clarification"))
@@ -402,26 +563,38 @@ def answer_question(
     if not need_clarify:
         followups = []        # 不需要追问时，别把问题推给用户，免得误导
 
-    # ---- found 由检索结果决定，不听模型的 ----
-    # 能走到这里，说明检索到了高于阈值的条款，知识库里就是有的。
-    # 实测 qwen2.5 会把"我还想多问几句"误表达成"知识库中未找到"，
-    # 这会把用户直接带偏，所以这一项必须由服务端拍板：
-    # "有没有" 完全由检索阈值决定（那道闸门在前面已经拦过无关问题了）。
-    model_found = bool(data.get("found", True))
-    found = True
-    if not model_found:
-        notes.append("模型原始判断为『未找到』，已按检索结果纠正（检索到了相关条款）")
-
     # ---- ⚠️ 风险 ----
     risks = guard.detect_risks(
         question, clauses, data.get("risk_tags"),
         cited_ids=[c["clause_id"] for c in valid_citations],
     )
 
+    # ---- 兜底：模型（在已废弃的 answer 字段里）替用户下了等级结论 ----
+    # t28 之后正文里不可能有模型写的结论句，所以这里不再对正文做句子级手术
+    # （那正是第六轮露馅的地方：误删知识句、漏掉无主语句）。
+    # 但模型"试图"下结论这件事仍是一个信号：整条回答降级为 needs_context，
+    # 并在正文末尾补一句服务端写的中性说明。guard.strip_level_conclusions
+    # 作为第二层防御保留（单测仍在跑它），只是主路径不再依赖它删句。
+    _, level_conclusion = guard.strip_level_conclusions(legacy_answer)
+    if level_conclusion:
+        mode = "needs_context"
+        found = False
+        need_clarify = True
+        if not followups:
+            followups = list(scope.CLARIFY_FOLLOWUPS)
+        answer_text = (
+            answer_text
+            + "\n\n⚠️ 模型这次试图对您的系统下等级结论，该内容已被丢弃："
+            "具体定到哪一级，需要结合你们的业务性质、数据规模和影响面判断，"
+            "本工具不替您下这个结论。"
+        )
+        notes.append("模型的回答里出现了等级结论，已丢弃并降级为「需要补充信息」")
+
     answer_text = guard.ensure_disclaimer(answer_text)
-    # 服务端已判定"找到了条款"，正文里就不该再出现"知识库中未找到"
-    if found and not model_found:
-        answer_text = guard.strip_false_no_result(answer_text)
+    # 引用对不上时，核对说明放在**正文最前面**，而不是只写进前端折叠的技术详情：
+    # 用户读到的是一段带编号的结论，他不会展开备注去发现编号是编的。
+    if citation_warning:
+        answer_text = citation_warning + "\n\n" + answer_text
     # 由服务端补的追问提示放在最前面（放在最后拼，避免被上面两步改坏）
     if forced_clarify_notice:
         answer_text = forced_clarify_notice + "\n" + answer_text
@@ -486,6 +659,20 @@ def _stream(question: str, session_id: str | None) -> Iterator[str]:
     events: "queue.Queue[tuple[str, Any]]" = queue.Queue()
     holder: dict = {}
     streamed = {"text": ""}
+    preface_sent = {"done": False}
+
+    def on_preface(text: str) -> None:
+        """首屏：服务端拼好的条款清单，检索完就能发，不用等模型。
+
+        t28 起模型不再写正文，所以这段"开场 + 全部条款块"是稳定的、可先发的；
+        模型返回后如果 summary 通过过滤，再以增量/替换的形式补在后面。
+        作为 delta 发出去，是为了复用前端已有的"前缀一致就续写"逻辑。
+        """
+        if not text or preface_sent["done"]:
+            return
+        preface_sent["done"] = True
+        streamed["text"] += text
+        events.put(("delta", text))
 
     def on_delta(piece: str) -> None:
         if not piece:
@@ -499,7 +686,8 @@ def _stream(question: str, session_id: str | None) -> Iterator[str]:
     def worker() -> None:
         try:
             holder["result"] = answer_question(
-                question, sid, on_delta=on_delta, on_stage=on_stage
+                question, sid, on_delta=on_delta, on_stage=on_stage,
+                on_preface=on_preface,
             )
         except HTTPException as exc:
             holder["http_error"] = exc

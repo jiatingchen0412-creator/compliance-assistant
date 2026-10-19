@@ -39,9 +39,11 @@ STARTUP_STATE: dict = {
 }
 
 # 质量自检结果（后台线程跑，不拖慢启动）
+# passed 三态：None=还没跑 / 没跑成（未知）、True=通过、False=未通过。
+# 初始必须是 None：还没检查就写 True，会让 /api/health 在启动瞬间报「检查通过」。
 QUALITY_STATE: dict = {
     "checked": False,
-    "passed": True,
+    "passed": None,
     "skipped": True,
     "failures": [],
     "items": [],
@@ -142,9 +144,13 @@ def _run_quality_check() -> None:
         else:
             log.warning("质量自检未通过：%s", "；".join(verdict["failures"]))
     except Exception as exc:
-        log.warning("质量自检执行失败（不影响使用）：%s", exc)
-        QUALITY_STATE.update({"checked": True, "passed": True, "skipped": True,
-                              "failures": [f"自检未能执行：{exc}"]})
+        # 三态：passed=None 表示「没跑成 / 不知道」，绝不能写成 True。
+        # 自检本身就是用来发现「看起来正常其实已经坏了」的，它自己坏掉时
+        # 如果还报通过，就等于把最不该骗人的地方变成了骗人的地方。
+        log.error("质量自检执行失败（结果未知）：%s", exc)
+        QUALITY_STATE.update({"checked": True, "passed": None, "skipped": True,
+                              "failures": [f"自检未能执行：{exc}"],
+                              "items": [], "checked_at": db.now()})
 
 
 @asynccontextmanager
@@ -159,15 +165,25 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="安全合规自查助手",
     description="基于等保2.0、NIST CSF 2.0、OWASP Top 10 2021 的中小企业安全合规辅助自查工具",
-    version="1.0.0",
+    # 版本号只有一个来源：config.APP_VERSION。
+    # 这里以前硬编码 "1.0.0"，与 /api/health 返回的版本互相矛盾。
+    version=config.APP_VERSION,
     lifespan=lifespan,
 )
 
+# 只放行同源页面。页面和接口由同一个服务提供（/ 与 /kb），本来不需要 CORS；
+# 这里保留显式白名单，是为了挡住「任意网页跨源读取本地无鉴权 API」——
+# 仅监听 127.0.0.1 只挡网络层，挡不住浏览器替攻击者发请求（见 docs/02 技术债登记）。
+_ALLOWED_ORIGINS = [
+    f"http://127.0.0.1:{config.APP_PORT}",
+    f"http://localhost:{config.APP_PORT}",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type"],
 )
 
 app.include_router(chat.router)

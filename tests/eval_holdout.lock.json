@@ -6,6 +6,7 @@
     "reject": 3,
     "out_of_kb": 3,
     "undeterminable": 3,
+    "clarify": 0,
     "risk_forbid": 2
   },
   "baseline": {
@@ -13,6 +14,7 @@
     "reject": 3,
     "out_of_kb": 3,
     "undeterminable": 3,
+    "clarify": 0,
     "risk_forbid": 2
   },
   "known_gaps": [
@@ -26,5 +28,139 @@
     "基准是棘轮：只能升不能降。--raise-baseline 遇到退步会直接拒绝，除非加 --force 并在 devlog 里写清理由。",
     "改完留出集要同步改文件里的 _字段 说明和本题库的 note，否则后人不知道这题在测什么。"
   ],
-  "_说明": "tests/eval_holdout.json（留出集）的指纹与基准。由 tests/test_eval_discipline.py --update-lock / --raise-baseline 生成，不要手改。"
+  "_说明": "tests/eval_holdout.json（留出集）与 tests/eval_questions.json（dev 集）的指纹、逐题基准和检索配置快照。由 tests/test_eval_discipline.py --update-lock / --raise-baseline 生成，不要手改。",
+  "dev_sha256": "cca7d033d4c9a33f34b5edaa58b60787e0e36c3537a8be2c96c151485d47907c",
+  "config": {
+    "min_score": 0.4,
+    "keyword_weight": 0.5,
+    "vector_weight": 0.5,
+    "top_k": 6,
+    "holdout_top_k": 6
+  },
+  "per_question": {
+    "h01": {
+      "class": "hit",
+      "ok": true
+    },
+    "h02": {
+      "class": "hit",
+      "ok": true
+    },
+    "h03": {
+      "class": "hit",
+      "ok": true
+    },
+    "h04": {
+      "class": "hit",
+      "ok": true
+    },
+    "h05": {
+      "class": "hit",
+      "ok": true
+    },
+    "h06": {
+      "class": "hit",
+      "ok": true
+    },
+    "h07": {
+      "class": "hit",
+      "ok": true
+    },
+    "h08": {
+      "class": "hit",
+      "ok": true
+    },
+    "h09": {
+      "class": "hit",
+      "ok": true
+    },
+    "h10": {
+      "class": "hit",
+      "ok": true
+    },
+    "h11": {
+      "class": "hit",
+      "ok": true
+    },
+    "h12": {
+      "class": "hit",
+      "ok": true
+    },
+    "h13": {
+      "class": "hit",
+      "ok": true
+    },
+    "h14": {
+      "class": "hit",
+      "ok": true
+    },
+    "h15": {
+      "class": "hit",
+      "ok": true
+    },
+    "h16": {
+      "class": "hit",
+      "ok": true
+    },
+    "h17": {
+      "class": "hit",
+      "ok": true
+    },
+    "h18": {
+      "class": "hit",
+      "ok": true
+    },
+    "h19": {
+      "class": "hit",
+      "ok": true
+    },
+    "h20": {
+      "class": "hit",
+      "ok": true
+    },
+    "r01": {
+      "class": "reject",
+      "ok": true
+    },
+    "r02": {
+      "class": "reject",
+      "ok": true
+    },
+    "r03": {
+      "class": "reject",
+      "ok": true
+    },
+    "o01": {
+      "class": "out_of_kb",
+      "ok": true
+    },
+    "o02": {
+      "class": "out_of_kb",
+      "ok": true
+    },
+    "o03": {
+      "class": "out_of_kb",
+      "ok": true
+    },
+    "u01": {
+      "class": "undeterminable",
+      "ok": true
+    },
+    "u02": {
+      "class": "undeterminable",
+      "ok": true
+    },
+    "u03": {
+      "class": "undeterminable",
+      "ok": true
+    },
+    "f01": {
+      "class": "hit+forbid",
+      "ok": true
+    },
+    "f02": {
+      "class": "hit+forbid",
+      "ok": true
+    }
+  }
 }

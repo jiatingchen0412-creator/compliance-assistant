@@ -15,7 +15,8 @@
 第二层 evaluate_end2end：**要 Ollama 在跑**。补上检索层看不见的两件事：
   模型到底有没有追问、声明的话有没有真的出现在回答里。
 
-第一层的红线就是启动自检的红线；第二层只在 tests/run_eval.py --llm 里查。
+第一层的红线就是启动自检的红线；第二层只在 tests/run_eval.py（不带 --no-llm）里查，
+CI 不跑（runner 没有 Ollama），所以它不能替 CI 宣称"提示词没退化"。
 
 红线来源：docs/07-测试与验收规范.md
 """
@@ -31,30 +32,39 @@ log = logging.getLogger(__name__)
 
 EVAL_FILE = config.BASE_DIR / "tests" / "eval_questions.json"
 # 留出测试集：与 dev 集共用下面这套评测代码，但用不同的题库文件。
-# 为什么要分两个文件、而不是把新题直接加进 dev 集——见 tests/test_eval_split.py 的模块注释。
+# 为什么要分两个文件、而不是把新题直接加进 dev 集——见 tests/test_eval_discipline.py 的模块注释。
 HOLDOUT_FILE = config.BASE_DIR / "tests" / "eval_holdout.json"
 
 # --------------------------------------------------------------------------
 # 指标红线（改这里之前先改 docs/07-测试与验收规范.md）
+#
+# 红线分两种语义，名字里必须能看出来，别再混：
+#   · "一票否决"类（reject / out_of_kb / undeterminable / clarify / forbid）：
+#     必须 ok == total。9/10 不是"差一点"，是失败——这几类错一条，
+#     用户就可能收到一次错误的安全结论。
+#   · "比例"类（hit / risk）：达到给定下限即可，名称里带"（比例）"。
 # --------------------------------------------------------------------------
 RED_LINES = {
-    "recall_min": 27,           # 该命中的 29 题里至少对 27 题
+    "recall_min": 25,           # 命中类（比例）：25 题里至少对 25 题
     "reject_required": 10,      # 10 道无关题必须全部拒答（一票否决）
-    "risk_min": 8,              # 9 道高风险题至少标对 8 题
-    "outkb_required": 6,        # 6 道点名库外法规的题必须全部识别出来
-    "undet_required": 4,        # 4 道适用性判定题必须全部拦住
-    "forbid_max_false": 0,      # 误标：一道都不许有
+    "risk_min": 8,              # 9 道高风险题至少标对 8 题（比例）
+    "outkb_required": 6,        # 6 道点名库外法规的题必须全部识别（一票否决）
+    "undet_required": 27,       # 25 道适用性判定/定级题必须全部拦住（一票否决）
+    "clarify_required": 4,      # 4 道信息不足题必须全部判为"该追问"（一票否决）
+    "forbid_max_false": 0,      # 误标：一道都不许有（一票否决）
 }
 
-# 各分类的题目数量下限。**不能只看通过数**——
-# 如果哪天题库文件被删掉一半，通过数会跟着缩水，红线却还是"通过"。
-# 所以数量本身也要卡。加题时记得同步改这里。
+# 各分类的题目数量必须与题库完全一致（不是"至少"）。
+# 少题会让红线缩水；多题而不更新这里，等于偷偷改了分母。
+# 加题/删题时记得同步改这里，并在 devlog 里说明理由。
 EXPECTED_COUNTS = {
-    "hit": 29,
+    "hit": 25,
     "reject": 10,
     "out_of_kb": 6,
-    "undeterminable": 4,
+    "undeterminable": 27,
+    "clarify": 4,
     "risk_forbid": 2,
+    "risk": 9,
 }
 
 
@@ -90,6 +100,7 @@ def _empty_stats() -> dict:
         "risk_total": 0, "risk_ok": 0,
         "outkb_total": 0, "outkb_ok": 0,
         "undet_total": 0, "undet_ok": 0,
+        "clarify_total": 0, "clarify_ok": 0,
         "forbid_total": 0, "forbid_ok": 0,
     }
 
@@ -113,7 +124,7 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
         return {
             "rows": [],
             "stats": _empty_stats(),
-            "error": f"找不到评测题文件{('：' + source) if source else ' tests/eval_questions.json'}",
+            "error": f"找不到或读不了评测题文件{('：' + source) if source else ' tests/eval_questions.json'}",
         }
 
     engine = get_engine()
@@ -191,6 +202,17 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
                 ok = False
                 detail = "未被识别为『适用性判定』类问题，会被当成可回答的问题交给大模型"
 
+        elif expect == "clarify":
+            # 信息不足、应当先追问的题。判定同样不需要大模型：
+            # scope.needs_clarification 是确定性规则（生产里 chat.py 也会用它兜底），
+            # 这里查的是"认不认得出该追问"，而不是"检索到了什么"。
+            stats["clarify_total"] += 1
+            if scope.needs_clarification(q["question"]):
+                stats["clarify_ok"] += 1
+            else:
+                ok = False
+                detail = "未被判定为需要追问，会被当成可回答的问题直接给结论"
+
         else:
             ok = False
             detail = f"未知的 expect 取值：{expect}"
@@ -256,8 +278,11 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
 def check_red_lines(stats: dict) -> dict:
     """把指标和红线比对，返回是否达标 + 每一项的明细。
 
-    每一项都同时卡"数量够不够"和"通过数够不够"：
-    只看通过数的话，题库被删空时反而会显示"全部达标"。
+    两类语义（见文件头 RED_LINES 的注释）：
+      · 一票否决类：必须 ok == total；
+      · 比例类：达到下限即可，名称里明确写"（比例）"。
+    每类还要求题数与 EXPECTED_COUNTS 完全一致——只卡≥下限的话，
+    加几道容易题就能把比例稀释上去，红线会再次变成摆设。
     """
     items: list[dict] = []
 
@@ -267,39 +292,43 @@ def check_red_lines(stats: dict) -> dict:
             "required": required, "passed": passed,
         })
 
+    def veto(name: str, actual_key: str, total_key: str, expected: int,
+             required: str) -> None:
+        actual = stats.get(actual_key, 0)
+        total = stats.get(total_key, 0)
+        add(name, actual, total, required, total == expected and actual == total)
+
     expect_hit = EXPECTED_COUNTS["hit"]
-    add("检索召回率", stats["hit_ok"], stats["hit_total"],
-        f"≥ {RED_LINES['recall_min']}",
-        stats["hit_total"] >= expect_hit and stats["hit_ok"] >= RED_LINES["recall_min"])
+    add("检索召回率（比例）", stats.get("hit_ok", 0), stats.get("hit_total", 0),
+        f"≥ {RED_LINES['recall_min']}/{expect_hit}（比例）",
+        stats.get("hit_total", 0) == expect_hit
+        and stats.get("hit_ok", 0) >= RED_LINES["recall_min"])
 
-    expect_reject = EXPECTED_COUNTS["reject"]
-    add("拒答正确率", stats["reject_ok"], stats["reject_total"],
-        f"必须 = {RED_LINES['reject_required']}",
-        stats["reject_total"] >= expect_reject
-        and stats["reject_ok"] >= RED_LINES["reject_required"])
+    veto("拒答正确率（一票否决）", "reject_ok", "reject_total",
+         EXPECTED_COUNTS["reject"],
+         f"必须 = {RED_LINES['reject_required']}/{EXPECTED_COUNTS['reject']}")
 
-    expect_risk = 9
-    add("⚠️ 风险标注率", stats["risk_ok"], stats["risk_total"],
-        f"≥ {RED_LINES['risk_min']}",
-        stats["risk_total"] >= expect_risk and stats["risk_ok"] >= RED_LINES["risk_min"])
+    expect_risk = EXPECTED_COUNTS["risk"]
+    add("⚠️ 风险标注率（比例）", stats.get("risk_ok", 0), stats.get("risk_total", 0),
+        f"≥ {RED_LINES['risk_min']}/{expect_risk}（比例）",
+        stats.get("risk_total", 0) == expect_risk
+        and stats.get("risk_ok", 0) >= RED_LINES["risk_min"])
 
-    expect_outkb = EXPECTED_COUNTS["out_of_kb"]
-    add("库外法规识别率", stats["outkb_ok"], stats["outkb_total"],
-        f"必须 = {RED_LINES['outkb_required']}",
-        stats["outkb_total"] >= expect_outkb
-        and stats["outkb_ok"] >= RED_LINES["outkb_required"])
+    veto("库外法规识别率（一票否决）", "outkb_ok", "outkb_total",
+         EXPECTED_COUNTS["out_of_kb"],
+         f"必须 = {RED_LINES['outkb_required']}/{EXPECTED_COUNTS['out_of_kb']}")
 
-    expect_undet = EXPECTED_COUNTS["undeterminable"]
-    add("适用性判定拦截率", stats["undet_ok"], stats["undet_total"],
-        f"必须 = {RED_LINES['undet_required']}",
-        stats["undet_total"] >= expect_undet
-        and stats["undet_ok"] >= RED_LINES["undet_required"])
+    veto("适用性判定拦截率（一票否决）", "undet_ok", "undet_total",
+         EXPECTED_COUNTS["undeterminable"],
+         f"必须 = {RED_LINES['undet_required']}/{EXPECTED_COUNTS['undeterminable']}")
 
-    expect_forbid = EXPECTED_COUNTS["risk_forbid"]
-    add("⚠️ 误标率", stats["forbid_ok"], stats["forbid_total"],
-        f"误标 ≤ {RED_LINES['forbid_max_false']} 处",
-        stats["forbid_total"] >= expect_forbid
-        and stats["forbid_ok"] >= stats["forbid_total"] - RED_LINES["forbid_max_false"])
+    veto("需追问识别率（一票否决）", "clarify_ok", "clarify_total",
+         EXPECTED_COUNTS["clarify"],
+         f"必须 = {RED_LINES['clarify_required']}/{EXPECTED_COUNTS['clarify']}")
+
+    veto("⚠️ 误标率（一票否决）", "forbid_ok", "forbid_total",
+         EXPECTED_COUNTS["risk_forbid"],
+         f"误标 ≤ {RED_LINES['forbid_max_false']} 处")
 
     failures = [
         f"{i['name']} 只有 {i['actual']}/{i['total']}，要求 {i['required']}"
@@ -313,16 +342,25 @@ def run_check(top_k: int = 6) -> dict:
 
     **刻意不碰大模型**：服务启动时 Ollama 可能还没起来，
     自检不能因此报失败，也不能因此卡住启动流程。
+
+    但"评测代码本身出错"和"Ollama 没起来"是两回事：前者必须 fail-loud。
+    以前这里 except 后返回 passed=True/skipped=True，等于把"检查坏了"
+    伪装成"检查通过"——那正是这个模块要防的事。
     """
     try:
         result = evaluate_retrieval(top_k=top_k)
     except Exception as exc:
-        log.warning("质量自检执行失败：%s", exc)
-        return {"passed": True, "skipped": True, "reason": str(exc), "items": [], "failures": []}
+        log.error("质量自检执行失败：%s", exc)
+        reason = f"质量自检执行失败：{exc}"
+        return {"passed": False, "skipped": False, "error": str(exc), "reason": reason,
+                "items": [], "failures": [reason], "rows": [], "stats": {}}
 
     if result.get("error"):
-        return {"passed": True, "skipped": True, "reason": result["error"],
-                "items": [], "failures": []}
+        reason = result["error"]
+        log.error("质量自检无法评测：%s", reason)
+        return {"passed": False, "skipped": False, "error": reason, "reason": reason,
+                "items": [], "failures": [reason], "rows": [],
+                "stats": result.get("stats", {})}
 
     verdict = check_red_lines(result["stats"])
     verdict["rows"] = result["rows"]

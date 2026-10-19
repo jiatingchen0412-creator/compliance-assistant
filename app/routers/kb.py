@@ -5,7 +5,8 @@ import json
 import logging
 import shutil
 import tempfile
-from pathlib import Path
+import uuid
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
@@ -270,6 +271,65 @@ def import_log(limit: int = 20):
     return {"logs": [dict(r) for r in rows]}
 
 
+# 上传后缀白名单：只接受「用户自查资料」这一用途真正需要的文档类型。
+# 不加白名单时 `x.sh` / `x.bat` 也会被原样落盘（虽然名字是服务端生成的，
+# 但把 .bat/.exe 存进临时目录再喂给解析器没有意义，属于把危险输入放进门）。
+_ALLOWED_UPLOAD_SUFFIXES = (".pdf", ".docx", ".doc", ".txt", ".md", ".json")
+
+
+def _safe_upload_name(filename: str | None) -> tuple[str, str]:
+    """把上传文件名收敛成「服务端生成、不含任何路径」的安全名字。
+
+    为什么必须重命名：pathlib 的 `/` 运算符**不做规范化**，
+    `tmp_dir / "..\\..\\x.txt"` 或 `tmp_dir / "C:/x.txt"` 都会直接落到临时目录之外
+    （前者经 multipart 解析会原样到达这里，后者是绝对路径）。
+    导入接口没有鉴权（见 docs/02 技术债登记），任何网页都能构造 multipart 请求，
+    所以文件名只能由服务端生成，用户提供的部分只允许贡献后缀。
+
+    返回 (服务端生成的文件名, 后缀)；不合法时抛 400。
+    """
+    raw = (filename or "").strip()
+    if not raw:
+        raise HTTPException(status_code=400, detail="上传文件缺少文件名。")
+    if "\x00" in raw:
+        raise HTTPException(status_code=400, detail="文件名不合法：包含空字符。")
+
+    # 统一按 `/` 看，但盘符要单独判：Windows 客户端用反斜杠，
+    # 而 PurePosixPath 会把 `\\` 当普通字符，漏判就会放行 `C:\\...`。
+    normalized = raw.replace("\\", "/")
+    parts = PurePosixPath(normalized)
+    has_drive = len(normalized) >= 2 and normalized[1] == ":"
+    if (
+        has_drive
+        or Path(raw).is_absolute()
+        or parts.is_absolute()
+        or ".." in parts.parts
+        or len(parts.parts) != 1
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="文件名不合法：只能上传单个文件，不能包含路径分隔符、盘符或「..」。",
+        )
+
+    suffix = parts.suffix.lower()
+    if suffix not in _ALLOWED_UPLOAD_SUFFIXES:
+        shown = suffix or "（没有后缀）"
+        raise HTTPException(
+            status_code=400,
+            detail=f"不支持的文件类型 {shown}：只接受 .pdf / .docx / .doc / .txt / .md / .json。",
+        )
+    return f"upload_{uuid.uuid4().hex}{suffix}", suffix
+
+
+def _safe_tmp_path(tmp_dir: Path, safe_name: str) -> Path:
+    """在临时目录内解析出最终落盘路径，并再次确认没有越界（纵深防御）。"""
+    tmp_dir = tmp_dir.resolve()
+    path = (tmp_dir / safe_name).resolve()
+    if path.parent != tmp_dir:
+        raise HTTPException(status_code=400, detail="文件名不合法：写入路径超出临时目录。")
+    return path
+
+
 @router.post("/import")
 async def import_file(file: UploadFile = File(...)):
     """导入标准 JSON 文件，或 PDF/Word/Markdown/TXT 自查资料。
@@ -279,21 +339,23 @@ async def import_file(file: UploadFile = File(...)):
 
     **导入前一定会先备份数据库**：备份失败就中止导入，绝不"没备份就动手"。
     """
-    suffix = Path(file.filename or "").suffix.lower()
+    # 文件名先过闸：不合格直接 400。此时还没有创建临时目录、也没有生成备份。
+    safe_name, suffix = _safe_upload_name(file.filename)
     tmp_dir = Path(tempfile.mkdtemp(prefix="kb_import_"))
-    tmp_path = tmp_dir / (file.filename or f"upload{suffix or '.txt'}")
 
     # 先备份，再动手。这是本步骤最重要的一条安全约束。
     from .. import backup as backup_mod
 
-    backup_file = backup_mod.create_backup("before_import")
-    if backup_file is None:
-        raise HTTPException(
-            status_code=500,
-            detail="导入前的自动备份失败，为避免数据丢失已中止导入。请检查磁盘空间后重试。",
-        )
-
+    backup_file = None
     try:
+        backup_file = backup_mod.create_backup("before_import")
+        if backup_file is None:
+            raise HTTPException(
+                status_code=500,
+                detail="导入前的自动备份失败，为避免数据丢失已中止导入。请检查磁盘空间后重试。",
+            )
+
+        tmp_path = _safe_tmp_path(tmp_dir, safe_name)
         with open(tmp_path, "wb") as f:
             shutil.copyfileobj(file.file, f)
 
@@ -313,7 +375,7 @@ async def import_file(file: UploadFile = File(...)):
             )
 
         log.info(
-            "导入完成 · 文件=%s 新增=%s 更新=%s 跳过=%s · 备份=%s",
+            "导入完成 · 文件=%r 新增=%s 更新=%s 跳过=%s · 备份=%s",
             file.filename, result.get("added"), result.get("updated"),
             result.get("skipped"), backup_file.name,
         )
@@ -323,12 +385,15 @@ async def import_file(file: UploadFile = File(...)):
             "backup": backup_file.name,
             "can_revert": bool(batch_id),
         }
+    except HTTPException:
+        raise
     except Exception as exc:
-        log.exception("导入失败 · 文件=%s", file.filename)
-        raise HTTPException(
-            status_code=400,
-            detail=f"导入失败：{exc}。数据库未受影响（导入前已备份：{backup_file.name}）。",
-        ) from exc
+        log.exception("导入失败 · 文件=%r", file.filename)
+        if backup_file is None:
+            detail = f"导入失败：{exc}。导入前的备份未能生成，数据库未做任何改动。"
+        else:
+            detail = f"导入失败：{exc}。数据库未受影响（导入前已备份：{backup_file.name}）。"
+        raise HTTPException(status_code=400, detail=detail) from exc
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 

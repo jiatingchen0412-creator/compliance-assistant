@@ -42,13 +42,14 @@ async function loadStats() {
     `;
 
     document.getElementById('kbSub').textContent =
+      `${s.standards} 个标准 · ${s.clauses} 条条款 · ${s.with_vector} 条已向量化 · ` +
       `检索方式：${s.vector_backend}${s.vector_model ? '（' + s.vector_model + '）' : ''} · ` +
       `匹配阈值 ${s.min_score} · 权重 关键词${s.keyword_weight}/语义${s.vector_weight} · ` +
       `索引时间 ${s.last_index}`;
-
-    document.getElementById('statusChip').textContent =
-      `${s.standards} 个标准 · ${s.clauses} 条条款 · ${s.with_vector} 条已向量化`;
-    document.getElementById('statusChip').className = 'status-chip ok';
+    // 这里以前会把 statusChip 改写成"N 个标准 · N 条条款"，而 initKb() 是先写
+    // 健康状态、再 await loadStats()，于是"大模型未就绪"的降级徽标刚写上就被这行
+    // 覆盖掉——/kb 页永远看不到模型状态，健康检查那段等于死代码。计数在统计卡片里
+    // 已经有了，状态胶囊只留模型状态，别再抢。
   } catch (e) {
     grid.innerHTML = `<div class="stat-card"><div class="num fail">!</div>
                       <div class="lbl">读取失败：${esc(e.message)}</div></div>`;
@@ -201,9 +202,14 @@ async function loadClauses() {
       const srcBadge = c.source_kind === 'user'
         ? '<span class="src-badge user">用户导入</span>'
         : '<span class="src-badge">内置</span>';
-      const srcLink = c.source_url
-        ? `<a class="src-link" href="${esc(c.source_url)}" target="_blank" rel="noopener">${ICON('external')}官方来源</a>`
-        : '';
+      // 同对话页：source_url 随导入 JSON 进来，先过协议白名单再转义，
+      // 非 http(s) 的只显示文本、不给可点链接。
+      const srcHref = safeUrl(c.source_url);
+      const srcLink = srcHref
+        ? `<a class="src-link" href="${esc(srcHref)}" target="_blank" rel="noopener noreferrer">${ICON('external')}官方来源</a>`
+        : (c.source_url
+          ? `<span class="src-link is-plain" title="来源地址不是 http(s) 链接，出于安全考虑不生成跳转">${esc(c.source_url)}</span>`
+          : '');
       const batchInfo = c.batch_id
         ? `<span class="src-meta">批次 #${c.batch_id}${c.batch_filename ? ' · ' + esc(c.batch_filename) : ''}</span>`
         : '';
@@ -426,7 +432,14 @@ async function initKb() {
       document.getElementById('statusChip').textContent = '大模型未就绪（检索功能不受影响）';
       document.getElementById('statusChip').className = 'status-chip warn';
     }
-  } catch (e) { /* 忽略 */ }
+  } catch (e) {
+    // 以前这里是 /* 忽略 */：健康检查挂了胶囊就永远停在"加载中…"，
+    // 看起来像界面卡死。降级信息必须让人看得见（CLAUDE.md：别静默降级）。
+    const chip = document.getElementById('statusChip');
+    chip.textContent = '状态未知（健康检查失败）';
+    chip.className = 'status-chip warn';
+    chip.title = '无法读取 /api/health：' + e.message;
+  }
 
   // 标准下拉
   try {

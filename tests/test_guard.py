@@ -234,6 +234,171 @@ def test_no_evidence_no_tag():
     return True, "三类全报但无佐证，最终一个都没标"
 
 
+# --------------------------------------------------------------------------
+# 诚实层回归：P0-5（编号错配）/ H-1（按行清理）/ H-2（只查问题）/ H-4（繁体全角）
+# --------------------------------------------------------------------------
+def _clause(cid: str, title: str = "测试条款") -> dict:
+    return {
+        "clause_id": cid,
+        "title": title,
+        "standard_name": "等保2.0",
+        "chapter_path": [],
+        "text": "x",
+        "text_type": "summary",
+        "risk_tags": [],
+    }
+
+
+@case("库外法规名与条文分行时，条文也要被清掉（H-1 回归）")
+def test_strip_multiline_bypass():
+    # 旧实现按「行」判断：第一行有法规名但没有转述动词 → 保留；
+    # 第二行有「第13条」但没有法规名 → 也保留。
+    # 于是服务端一边说"我不会转述这部法规"，一边把转述原样留在下面。
+    text = (
+        "《个人信息保护法》的要求如下：\n"
+        "第13条规定，处理个人信息应当取得个人同意。\n"
+        "我们的系统还需要关注数据加密。"
+    )
+    cleaned, removed = guard.strip_out_of_kb_claims(text, _detections(PIPL_QUESTION))
+    if removed < 1:
+        return False, f"一句都没删：{cleaned!r}"
+    if "取得个人同意" in cleaned:
+        return False, f"分行的条文整段幸存（旧实现的漏洞）：{cleaned!r}"
+    if "数据加密" not in cleaned:
+        return False, f"无关内容被误删：{cleaned!r}"
+    return True, f"删掉 {removed} 句，分行写的条文已清掉，无关内容保留"
+
+
+@case("繁体和全角写法同样能被清理（H-4 回归）")
+def test_strip_traditional_fullwidth():
+    body = "個人信息保護法第１７條規定，處理個人信息應取得同意。"
+    cleaned, removed = guard.strip_out_of_kb_claims(body, _detections(PIPL_QUESTION))
+    if removed != 1 or "取得同意" in cleaned:
+        return False, f"繁体/全角写法漏过了：removed={removed} {cleaned!r}"
+    return True, "繁体法规名 + 全角条号写的转述被清掉"
+
+
+@case("引用编号只按点号边界做唯一前缀展开（P0-5 回归）")
+def test_citation_prefix_boundary():
+    # 8.1.4.1 不能"展开"成 8.1.4.11：卡片显示 8.1.4.11、正文写着 8.1.4.1，
+    # 等于系统替模型把编造的编号圆了回去。
+    clauses = [_clause("8.1.4.11"), _clause("8.1.4.2")]
+    valid, invalid = guard.validate_citations(["8.1.4.1"], clauses)
+    if valid or invalid != ["8.1.4.1"]:
+        return False, f"8.1.4.1 被错配到了 {[c['clause_id'] for c in valid]}"
+
+    # 唯一、且扩展点落在点号边界上时才展开：8.1.4 → 8.1.4.7
+    valid2, invalid2 = guard.validate_citations(["8.1.4"], [_clause("8.1.4.7")])
+    if len(valid2) != 1 or valid2[0]["clause_id"] != "8.1.4.7" or invalid2:
+        return False, (
+            f"唯一前缀没有展开：valid={[c['clause_id'] for c in valid2]} "
+            f"invalid={invalid2}"
+        )
+
+    # 候选不唯一时不猜（宁可这条引用不显示）
+    valid3, invalid3 = guard.validate_citations(["8.1.4"], clauses)
+    if valid3 or invalid3 != ["8.1.4"]:
+        return False, f"候选不唯一却猜了：{[c['clause_id'] for c in valid3]}"
+    return True, "8.1.4.1 不再错配 8.1.4.11；唯一前缀可展开；有歧义时不猜"
+
+
+@case("正文编号核对不再被『包含关系』洗白（P0-5 回归）")
+def test_hallucinated_boundary():
+    clauses = [_clause("8.1.4.11")]
+    if "8.1.4.1" not in guard.detect_hallucinated_ids("按 8.1.4.1 的规定执行。", clauses):
+        return False, "8.1.4.1 被 8.1.4.11 吸收了，真正的编造漏报"
+    if guard.detect_hallucinated_ids("按 8.1.4 的规定执行。", clauses):
+        return False, "少写一段的 8.1.4 被误报成编造"
+    return True, "8.1.4.1 不再被 8.1.4.11 吸收；8.1.4 仍算同一个编号"
+
+
+@case("模型自发引用库外法规：答案侧也要检测并清理（H-2 回归）")
+def test_answer_side_detection():
+    answer = (
+        "根据《网络安全法》第21条，网络运营者应当按照规定履行安全保护义务。\n"
+        "我们的系统还需要关注数据加密。"
+    )
+    # 生产路径现在同时把问题和答案喂给 detect_out_of_kb（见 routers/chat.py）
+    det = scope.detect_out_of_kb(answer)
+    if not any("网络安全法" in d["name"] for d in det):
+        return False, f"答案里的《网络安全法》没被识别：{det}"
+    cleaned, removed = guard.strip_out_of_kb_claims(answer, det)
+    if "安全保护义务" in cleaned or "第21条" in cleaned:
+        return False, f"答案里的转述没被清掉：{cleaned!r}"
+    if "数据加密" not in cleaned:
+        return False, f"无关内容被误删：{cleaned!r}"
+    return True, f"答案侧的库外法规被识别，并清掉 {removed} 句转述"
+
+
+@case("回答里出现清单之外的法规名：结构兜底也能揪出来（F2 回归）")
+def test_generic_law_name_fallback():
+    known = scope._ALL_ALIASES
+    text = (
+        "根据《中华人民共和国反电信网络诈骗法》第十条，"
+        "以及《网络数据安全管理条例》第五条，应当建立相应制度。"
+    )
+    got = guard.detect_unsupported_law_names(text, known)
+    expected = ["中华人民共和国反电信网络诈骗法", "网络数据安全管理条例"]
+    missing = [n for n in expected if n not in got]
+    if missing:
+        return False, f"清单外法规名漏检：{missing}（got={got}）"
+    # 清单里已有的法规、知识库内的标准，不该被重复报成"清单外"
+    ok_text = (
+        "《网络安全法》见 8.1.4.1；"
+        "《信息安全技术 网络安全等级保护基本要求》属于库内标准。"
+    )
+    if guard.detect_unsupported_law_names(ok_text, known):
+        return False, "已知法规/库内标准被误报成清单外"
+    return True, f"识别 {len(got)} 个清单外法规名；已知名称与库内标准不误报"
+
+
+@case("等级结论兜底：主语指向用户才删，知识型句子不误伤")
+def test_strip_level_conclusions() -> tuple[bool, str]:
+    cases = [
+        ("你们这套系统应当按第三级建设。", True),
+        ("具体来说，贵司应按照三级要求做整改。", True),
+        ("这套系统属于第三级。", True),
+        ("你们需要了解三级的要求，再决定怎么做。", False),
+        ("等保三级有哪些要求？第三级里关于审计日志是怎么规定的？", False),
+        ("同一局域网内应部署审计设备。", False),
+    ]
+    bad = []
+    for text, expect in cases:
+        _, hit = guard.strip_level_conclusions(text)
+        if hit != expect:
+            bad.append((text, expect, hit))
+    if bad:
+        return False, f"判定不符：{bad}"
+    cleaned, hit = guard.strip_level_conclusions("你们应当按三级建设。")
+    if not hit or "不替您下这个结论" not in cleaned:
+        return False, f"删句后没有中性说明：{cleaned!r}"
+    return True, f"{len(cases)} 条判据全部符合；命中时替换为中性说明"
+
+
+@case("法规别名：台湾用语 / 私隐条例 / PDPO / 点号 / 不可见分隔符都能识别")
+def test_law_alias_normalization() -> tuple[bool, str]:
+    samples = [
+        ("個資保護法第13條怎麼寫", "个人信息保护法"),
+        ("《个人\u2063信息·保护法》要求什么", "个人信息保护法"),
+        ("PDPO 的規定", "私隐"),
+        ("「個人資料保護法」適用嗎", "个人信息保护法"),
+    ]
+    bad = []
+    for q, expect in samples:
+        names = [d["name"] for d in scope.detect_out_of_kb(q)]
+        if not any(expect in n for n in names):
+            bad.append((q, expect, names))
+    if bad:
+        return False, f"别名漏检：{bad}"
+    det = scope.detect_out_of_kb("《个人信息·保护法》怎么规定")
+    cleaned, removed = guard.strip_out_of_kb_claims(
+        "《个人·信息保护法》规定：应当取得同意。", det
+    )
+    if removed < 1 or "取得同意" in cleaned:
+        return False, f"被点号拆开的转述未清掉：removed={removed} cleaned={cleaned!r}"
+    return True, f"{len(samples)} 种写法全部识别；回答侧转述已清理"
+
+
 def main() -> int:
     print("=" * 70)
     print("输出守卫测试 · 不依赖 Ollama 与数据库")

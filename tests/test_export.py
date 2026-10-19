@@ -232,6 +232,50 @@ def test_save_to_disk():
         )
 
 
+FABRICATED = [
+    {
+        "role": "user",
+        "content": "我们的系统该怎么整改？",
+        "created_at": "2026-10-19 10:00:00",
+    },
+    {
+        "role": "assistant",
+        "content": "按 8.9.9.9 的规定，您必须立即整改。\n\n本回答仅用于辅助自查。",
+        "created_at": "2026-10-19 10:00:01",
+        "citations": [
+            {
+                "standard_id": "dengbao_2.0", "standard_name": "等保2.0",
+                "clause_id": "8.1.4.1", "title": "身份鉴别（标识与口令复杂度）",
+                "text": "要求对登录用户进行身份标识和鉴别……",
+                "text_type": "summary", "risk_tags": [],
+            },
+        ],
+        "risks": [],
+        "found": True,
+        "mode": "llm",
+    },
+]
+
+
+@case("导出正文含『请核实』提示，编造编号不会随报告外发（H-5 回归）")
+def test_fabricated_id_warning():
+    # 旧实现只把「请核实」写在导出之外：报告正文照旧写着「按 8.9.9.9 的规定」，
+    # 而 8.9.9.9 根本不在引用列表里。报告是要外发给客户/领导的，
+    # 编造编号一旦随报告出去，就不再是"界面上的小瑕疵"。
+    data = export.build_report("编号核对", "fake01", FABRICATED)
+    doc = Document(io.BytesIO(data))
+    texts = [p.text for p in doc.paragraphs]
+
+    if not any("编号核对" in t for t in texts):
+        return False, "封面缺少『编号核对』提示段"
+    if not any("请核实" in t for t in texts):
+        return False, "全文没有『请核实』提示"
+    hits = [t for t in texts if "8.9.9.9" in t and "请核实" in t]
+    if not hits:
+        return False, "正文提到 8.9.9.9，却没有在同段提示『请核实』"
+    return True, f"封面有编号核对段，正文提示：{hits[0][:46]!r}"
+
+
 def main() -> int:
     print("=" * 70)
     print("Word 报告导出测试 · 用合成数据验证文档结构")

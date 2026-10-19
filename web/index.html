@@ -2,6 +2,10 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
+<!-- 内容安全策略：只允许加载本站资源。页面上所有动态内容都过 esc()，
+     但万一哪天又漏了一处，CSP 会让外链脚本和 javascript: 直接失效，是第二道闸。
+     只写 meta 里能生效的指令（frame-ancestors / report-uri 在 meta 中无效，故不列）。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="color-scheme" content="light">
 <title>安全合规自查助手</title>
@@ -14,7 +18,7 @@
      刻意不引任何在线图标库（lucide CDN 之类）——本工具要求完全离线可用，
      断网时外部资源会让界面直接缺图标。
      ========================================================================== -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+<svg width="0" height="0" class="sprite" aria-hidden="true" focusable="false">
   <defs>
     <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
     <symbol id="i-menu" viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18"/></symbol>
