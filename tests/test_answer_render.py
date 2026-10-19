@@ -235,22 +235,34 @@ def test_invalid_id_not_echoed() -> tuple[bool, str]:
     )
 
 
-@case("端到端：模型返回非法编号时，正文里不出现那句中文")
+@case("端到端：模型返回非法编号时，正文与 notes 都不出现那句中文")
 def test_invalid_id_end_to_end() -> tuple[bool, str]:
+    smuggled = "你们应当按三级建设。"
     payload = {
         "found": True,
-        "clauses": ["你们应当按三级建设。"],
+        "clauses": [smuggled, "8.1.4.99", "三级:2024"],
         "risk_tags": [],
         "need_clarification": False,
         "followup_questions": [],
     }
     result = _run_chat("客户的手机号存在数据库里没有加密", payload)
     text = result.get("answer") or ""
+    notes = " ".join(str(n) for n in (result.get("notes") or []))
     if "你们应当按三级建设" in text:
         return False, f"非法编号原文被拼进正文：{text[:160]!r}"
     if "引用核对" not in text:
         return False, "连『引用核对』提示都没有，用户会以为这个编号是真的"
-    return True, "非法编号被剔除，只留编号形状的回显"
+    # notes 会显示在页面「技术详情」里，是同一类可见通道（t30 收口）
+    problems: list[str] = []
+    if smuggled in notes:
+        problems.append("模型原文漏进 notes（技术详情会显示）")
+    if "三级:2024" in notes:
+        problems.append("非编号形状的字符串漏进 notes")
+    if "8.1.4.99" not in notes:
+        problems.append("编号形状的 id 也被一起吞了，排查时看不出是哪个号")
+    if problems:
+        return False, f"notes 侧门未收口：{problems}｜notes={notes[:160]!r}"
+    return True, "非法编号被剔除；正文与 notes 都只留编号形状的回显"
 
 
 @case("编号回显是闭集：拼音串/自由文本一律不回显（t29 attempt 2 · T29-02）")
@@ -413,6 +425,32 @@ def test_followups_not_from_model() -> tuple[bool, str]:
         not problems,
         "追问只来自服务端固定清单；模型塞的那句一个字都没进 payload",
         f"追问通道未收口：{problems}",
+    )
+
+
+@case("notes 这条侧门也收口：模型塞进 clauses 的句子不出现在技术详情里（t30 追问同源）")
+def test_notes_do_not_echo_model_text() -> tuple[bool, str]:
+    smuggled = "你们应当按三级建设。"
+    payload = {
+        "found": True,
+        "clauses": [smuggled, "8.1.4.99", "三级:2024"],
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [],
+    }
+    result = _run_chat("客户的手机号存在数据库里没有加密", payload)
+    notes = " ".join(str(n) for n in (result.get("notes") or []))
+    problems: list[str] = []
+    if smuggled in notes:
+        problems.append("模型原文漏进 notes（页面技术详情会显示）")
+    if "三级:2024" in notes:
+        problems.append("非编号形状的字符串漏进 notes")
+    if "8.1.4.99" not in notes:
+        problems.append("编号形状的 id 也被一起吞了，排查时看不出是哪个号")
+    return check(
+        not problems,
+        "notes 只回显编号形状，模型句子不出现在技术详情里",
+        f"notes 侧门未收口：{problems}｜notes={notes[:160]!r}",
     )
 
 
