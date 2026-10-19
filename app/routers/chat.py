@@ -192,6 +192,29 @@ def answer_question(
     out_of_kb = scope.detect_out_of_kb(question)
     out_of_kb_names = [d["name"] for d in out_of_kb]
 
+    # ---- 领域边界：根本不属于网络安全合规的问题 ----
+    # 劳动法加班费、纸质合同保存年限、CE 认证这类问题，关键词分只有 0.10~0.17，
+    # 语义分却高达 0.84~0.93（bge-small-zh 觉得它们和「人员离岗」「管理制度评审」
+    # 「合规产品采购」很像），融合后会盖过阈值。调阈值切不开——dev 集里关键词分
+    # 最低的真题比这类拒答题还低。所以用领域证据判，判据在 app/scope.py。
+    out_domain, domain_label, domain_terms = scope.detect_out_of_domain(question)
+    if out_domain:
+        result = {
+            "session_id": sid,
+            "answer": scope.out_of_domain_notice(domain_label, domain_terms),
+            "citations": [],
+            "risks": [],
+            "need_clarification": False,
+            "followup_questions": [],
+            "found": False,
+            "mode": "out_of_domain",
+            "out_of_kb": [],
+            "notes": [f"领域拦截：{domain_label}（{'、'.join(domain_terms)}）"],
+        }
+        _save_message(sid, "assistant", result["answer"], _payload(result))
+        log_qa(log, question, result, time.time() - t0)
+        return result
+
     if not clauses or best < config.RETRIEVAL_MIN_SCORE:
         # 即使检索不到条款，只要用户点名了库外法规，也要明确告诉他"没收录这部法规"，
         # 否则用户会以为"知识库里没有"等于"这事没法问"。

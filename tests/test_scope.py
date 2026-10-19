@@ -262,6 +262,56 @@ def test_clarify_notice():
     return True, f"提示 {len(text)} 字，附 {len(bad)} 个追问（服务端固定，模型改不了）"
 
 
+@case("领域拦截：非网络安全领域的问题要被拦下（六类领域各一题）")
+def test_out_of_domain_blocked():
+    samples = [
+        ("员工的加班费和调休怎么算才符合劳动法？", "劳动与人事"),
+        ("公司给员工缴纳社保的基数怎么确定？", "劳动与人事"),
+        ("增值税专用发票开错了怎么红冲？", "财税"),
+        ("客户的纸质合同原件需要保存多少年？", "文书与档案管理"),
+        ("我们的产品要出口到欧盟，需要做 CE 认证吗？", "外贸与出口"),
+        ("客户投诉产品质量问题，需要按三包规定怎么处理？", "工商与产品资质"),
+    ]
+    bad = []
+    for q, want in samples:
+        hit, domain, terms = scope.detect_out_of_domain(q)
+        if not hit:
+            bad.append(f"{q[:18]}… 未被拦下")
+        elif domain != want:
+            bad.append(f"{q[:18]}… 领域判成 {domain}，期望 {want}")
+    if bad:
+        return False, "；".join(bad)
+    return True, f"{len(samples)} 类非本领域问题全部拦下"
+
+
+@case("领域拦截：真问题一个都不能误伤")
+def test_out_of_domain_no_false_positive():
+    # 每一道都是本项目 dev 集里的真题，必须全部放行
+    samples = [
+        "我们公司十几个人都用同一个管理员账号登录进销存系统，这样有问题吗？",
+        "加班的时候服务器被入侵了，应该先做什么？",          # 同时出现"加班"与"服务器"
+        "客户的手机号和收货地址都存在数据库里，没有做加密，需要注意什么？",
+        "帮我看看 8.1.4.1 这一条具体要求什么？",             # 只有条款编号，没有领域词
+        "合规要花很多钱吗？",                                # 笼统，无任何领域词
+        "我们的系统要做等保三级，需要满足哪些技术要求？",
+        "员工离职之后，他的系统账号和权限一直没有人回收，合规上有什么要求？",
+        "系统日志要保存多久，有没有明确规定？",
+    ]
+    bad = [q[:18] + "…" for q in samples if scope.detect_out_of_domain(q)[0]]
+    if bad:
+        return False, f"误伤 {bad}"
+    return True, f"{len(samples)} 道真题全部放行"
+
+
+@case("领域拦截：解释文本说清'不是不知道，是不在这个范围'")
+def test_out_of_domain_notice():
+    text = scope.out_of_domain_notice("劳动与人事", ["劳动法", "加班费"])
+    for kw in ("不属于本工具覆盖", "网络安全与数据合规", "律师"):
+        if kw not in text:
+            return False, f"缺少关键提示 {kw!r}"
+    return True, f"提示 {len(text)} 字，并引导到'信息安全的侧面'"
+
+
 def main() -> int:
     print("=" * 70)
     print("问题范围判定测试 · 不依赖 Ollama 与数据库")

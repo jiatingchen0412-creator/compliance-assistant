@@ -39,7 +39,7 @@ HOLDOUT_FILE = config.BASE_DIR / "tests" / "eval_holdout.json"
 # --------------------------------------------------------------------------
 RED_LINES = {
     "recall_min": 27,           # 该命中的 29 题里至少对 27 题
-    "reject_required": 5,       # 5 道无关题必须全部拒答（一票否决）
+    "reject_required": 10,      # 10 道无关题必须全部拒答（一票否决）
     "risk_min": 8,              # 9 道高风险题至少标对 8 题
     "outkb_required": 6,        # 6 道点名库外法规的题必须全部识别出来
     "undet_required": 4,        # 4 道适用性判定题必须全部拦住
@@ -51,7 +51,7 @@ RED_LINES = {
 # 所以数量本身也要卡。加题时记得同步改这里。
 EXPECTED_COUNTS = {
     "hit": 29,
-    "reject": 5,
+    "reject": 10,
     "out_of_kb": 6,
     "undeterminable": 4,
     "risk_forbid": 2,
@@ -125,7 +125,12 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
         expect = q.get("expect", "hit")
         result = engine.search(q["question"], top_k=top_k)
         best = result["best_score"]
-        found = best >= config.RETRIEVAL_MIN_SCORE
+        # 领域拦截优先于阈值：有些问题（劳动法加班费、纸质合同保存年限、CE 认证）
+        # 关键词分只有 0.10~0.17，语义分却高达 0.84~0.93，融合后照样过 0.40。
+        # 这类只能靠 scope 的领域证据判掉——调阈值切不开，因为 dev 集里关键词分
+        # 最低的该命中题（0.137）比这些拒答题（0.165）还低。详见 app/scope.py。
+        blocked, blocked_domain, blocked_terms = scope.detect_out_of_domain(q["question"])
+        found = best >= config.RETRIEVAL_MIN_SCORE and not blocked
         got = [c["clause_id"] for c in result["results"]]
         detail = ""
         ok = True
@@ -141,7 +146,10 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
                 stats["hit_ok"] += 1
             else:
                 ok = False
-                if not found:
+                if blocked:
+                    detail = (f"被领域拦截（{blocked_domain}：{'、'.join(blocked_terms)}）"
+                              f"—— 但这题是真题，说明词表误伤，要改 CYBER_TERMS 或剔词")
+                elif not found:
                     detail = (f"被阈值拒答（最高分 {best:.3f} < {config.RETRIEVAL_MIN_SCORE}），"
                               f"用户收到的是『未找到』")
                 else:
@@ -151,6 +159,8 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
             stats["reject_total"] += 1
             if not found:
                 stats["reject_ok"] += 1
+                if blocked:
+                    detail = f"领域拦截生效（{blocked_domain}：{'、'.join(blocked_terms)}）"
             else:
                 ok = False
                 top = got[0] if got else "-"
@@ -236,6 +246,7 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
             "risks": got_risks,
             "top": [f"{c['clause_id']} {c['title']}" for c in result["results"][:3]],
             "detail": detail,
+            "blocked": f"{blocked_domain}：{'、'.join(blocked_terms)}" if blocked else "",
             "note": q.get("note", ""),
         })
 

@@ -212,6 +212,46 @@
       "note": "完全无关，必须拒答"
     },
     {
+      "id": "q45",
+      "question": "员工请婚假需要提前几天申请？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "★ 难拒答题（不是『今天天气』那种明显的）：长得像合规问题，实际属劳动人事。语义检索会把它和『人员离岗』『安全培训』排得很近。"
+    },
+    {
+      "id": "q46",
+      "question": "公司给员工缴纳社保的基数怎么确定？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "★ 难拒答题：社保，与网络安全合规无关。"
+    },
+    {
+      "id": "q47",
+      "question": "增值税专用发票开错了怎么红冲？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "★ 难拒答题：财税。"
+    },
+    {
+      "id": "q48",
+      "question": "办公室要重新装修，需要报消防验收吗？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "★ 难拒答题：消防/装修。注意与『机房的物理环境安全』区分——问的是装修报建，不是门禁和温湿度。"
+    },
+    {
+      "id": "q49",
+      "question": "客户投诉产品质量问题，需要按三包规定怎么处理？",
+      "expect": "reject",
+      "must_include_any": [],
+      "risk_expect": [],
+      "note": "★ 难拒答题：消费者权益/产品三包。"
+    },
+    {
       "id": "q26",
       "question": "我们的系统要做等保三级，需要满足哪些技术要求？",
       "expect": "hit",
