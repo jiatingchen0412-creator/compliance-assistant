@@ -402,6 +402,10 @@ def render_report(result: dict, agreement: dict | None = None) -> str:
         )
         if agreement.get("mismatches"):
             lines.append(f"- 不一致题号：{', '.join(agreement['mismatches'])}")
+        diffs = agreement.get("mean_abs_diff") or {}
+        diff_items = [f"{DIM_LABEL[k]} {v}" for k, v in diffs.items() if v is not None]
+        if diff_items:
+            lines.append("- 评分平均偏差（人工 vs judge）：" + "、".join(diff_items))
     lines += [
         "",
         "## 逐题明细",

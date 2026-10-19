@@ -237,7 +237,10 @@
     });
   });
 
-  const realChatStream = window.API && API.chatStream;
+  // 注意：api.js 里的 API 是顶层 const，只存在于脚本作用域，不是 window 的属性，
+  // 所以只能写裸 API / typeof 判断；`window.API` 永远是 undefined。
+  const canStream = typeof API !== 'undefined' && API && typeof API.chatStream === 'function';
+  const realChatStream = canStream ? API.chatStream : null;
   if (!realChatStream) {
     out.problems.push('页面上没有 API.chatStream，无法测流式播报');
     return out;

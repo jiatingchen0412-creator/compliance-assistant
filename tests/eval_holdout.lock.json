@@ -36,7 +36,8 @@
     "keyword_weight": 0.5,
     "vector_weight": 0.5,
     "top_k": 6,
-    "holdout_top_k": 6
+    "holdout_top_k": 6,
+    "prompt_version": "r8"
   },
   "per_question": {
     "h01": {
