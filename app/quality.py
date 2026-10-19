@@ -46,7 +46,10 @@ HOLDOUT_FILE = config.BASE_DIR / "tests" / "eval_holdout.json"
 # --------------------------------------------------------------------------
 RED_LINES = {
     "recall_min": 25,           # 命中类（比例）：25 题里至少对 25 题
-    "reject_required": 10,      # 10 道无关题必须全部拒答（一票否决）
+    # 16 道无关题必须全部拒答（一票否决）。
+    # 10 → 16 是 2026-10-19 补的 6 道：留出集盲出题暴露出四个领域缺口
+    # （特种设备、广告、环评备案、食品许可），按纪律先补 dev 集再改词表。
+    "reject_required": 16,
     "risk_min": 8,              # 9 道高风险题至少标对 8 题（比例）
     "outkb_required": 6,        # 6 道点名库外法规的题必须全部识别（一票否决）
     "undet_required": 27,       # 25 道适用性判定/定级题必须全部拦住（一票否决）
@@ -59,7 +62,7 @@ RED_LINES = {
 # 加题/删题时记得同步改这里，并在 devlog 里说明理由。
 EXPECTED_COUNTS = {
     "hit": 25,
-    "reject": 10,
+    "reject": 16,
     "out_of_kb": 6,
     "undeterminable": 27,
     "clarify": 4,

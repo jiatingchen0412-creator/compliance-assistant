@@ -299,6 +299,92 @@ def check_version_sync() -> list[str]:
     return problems
 
 
+# ---------- 提示词版本：代码 = docs/05 变更表 = CHANGELOG 最新一节 ----------
+
+_PROMPT_DOC_REL = "docs/05-问答与防幻觉规范.md"
+_PROMPT_DOC_HEADING = "提示词版本变更表"
+
+
+def _line_no(text: str, pos: int) -> int:
+    """把字符串下标换算成 1 基行号。"""
+    return text.count("\n", 0, pos) + 1
+
+
+def check_prompt_version() -> list[str]:
+    """提示词版本号必须三处一致。
+
+    1. `app/prompt.py` 的 `PROMPT_VERSION`（正则读源码，不 import app）；
+    2. `docs/05-问答与防幻觉规范.md` 的「提示词版本变更表」里有一行以该版本号开头；
+    3. `CHANGELOG.md` 最新一节（第一个 `## [` 到下一个 `## [` 之间）里出现该版本号。
+
+    只改了提示词却忘了升版本、或升了版本却忘了同步文档，都会红。
+    """
+    problems: list[str] = []
+    prompt_py = ROOT / "app" / "prompt.py"
+    try:
+        src = prompt_py.read_text(encoding="utf-8")
+    except OSError as exc:
+        return [f"app/prompt.py:1 读不到：{exc}"]
+    m = re.search(r'^PROMPT_VERSION\s*=\s*"([^"]+)"', src, re.M)
+    if not m:
+        return [
+            "app/prompt.py:1 找不到模块级 PROMPT_VERSION 常量"
+            "（提示词版本必须有单一来源）"
+        ]
+    version = m.group(1)
+    version_line = _line_no(src, m.start())
+
+    # 1) docs/05 的变更表
+    doc_path = ROOT / "docs" / "05-问答与防幻觉规范.md"
+    try:
+        doc = doc_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        problems.append(f"{_PROMPT_DOC_REL}:1 读不到：{exc}")
+    else:
+        heading_at = doc.find(_PROMPT_DOC_HEADING)
+        if heading_at < 0:
+            problems.append(
+                f"{_PROMPT_DOC_REL}:1 找不到「{_PROMPT_DOC_HEADING}」小节"
+                f"（代码里 PROMPT_VERSION = \"{version}\"）"
+            )
+        else:
+            row = re.search(r"^\|\s*" + re.escape(version) + r"\s*\|", doc, re.M)
+            if row is None:
+                problems.append(
+                    f"{_PROMPT_DOC_REL}:{_line_no(doc, heading_at)} "
+                    f"「{_PROMPT_DOC_HEADING}」里没有 {version} 这一行，"
+                    f"但 app/prompt.py:{version_line} 写的是 "
+                    f"PROMPT_VERSION = \"{version}\"（升版本必须同步文档）"
+                )
+
+    # 2) CHANGELOG 最新一节
+    changelog = ROOT / "CHANGELOG.md"
+    try:
+        cl = changelog.read_text(encoding="utf-8")
+    except OSError as exc:
+        problems.append(f"CHANGELOG.md:1 读不到：{exc}")
+    else:
+        lines = cl.splitlines()
+        start = next((i for i, ln in enumerate(lines) if ln.startswith("## [")), None)
+        if start is None:
+            problems.append("CHANGELOG.md:1 找不到形如 `## [v1.6] - 2026-10-19` 的最新版本一节")
+        else:
+            end = next(
+                (i for i in range(start + 1, len(lines)) if lines[i].startswith("## [")),
+                len(lines),
+            )
+            section = "\n".join(lines[start:end])
+            if version not in section:
+                problems.append(
+                    f"CHANGELOG.md:{start + 1} 最新一节（{lines[start].strip()}）里没有出现"
+                    f"提示词版本 {version}（正文里加一行「提示词版本：{version}」即可）"
+                )
+
+    if not problems:
+        print(f"  提示词版本 {version}：代码 ⇄ docs/05 变更表 ⇄ CHANGELOG 三方一致")
+    return problems
+
+
 # ---------- 文档里的数字 vs 代码里的真值 ----------
 
 _DOC_SKIP = "doc-sync: skip"  # 写成 <!-- doc-sync: skip --> 即可豁免该行
@@ -517,6 +603,7 @@ def main() -> int:
     problems += check_bat_ascii()
     problems += check_console_encoding()
     problems += check_version_sync()
+    problems += check_prompt_version()
     problems += check_doc_sync()
 
     print()

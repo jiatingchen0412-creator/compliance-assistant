@@ -43,6 +43,7 @@ ENV: dict = {}
 
 AXE = ROOT / "tests" / "vendor" / "axe.min.js"
 PROBE = ROOT / "tests" / "frontend_probe.js"
+A11Y = ROOT / "tests" / "a11y_walkthrough.js"
 CDP = ROOT / "tools" / "cdp_eval.js"
 
 # 存储型 XSS 回归探针：source_url 是随导入 JSON 一起进库、并且会被持久化的字段，
@@ -300,6 +301,75 @@ KB_IDS = ["treeBox", "clauseList", "pager", "statGrid", "stdSelect", "fileInput"
 
 # ---------------------------------------------------------------- 用例
 
+@case("屏幕阅读器代理走查：阅读顺序、可访问名称、标题结构、live region 与流式播报")
+def t_a11y_walkthrough():
+    p = ENV.get("a11y") or {}
+    if not p:
+        return (False, "无障碍走查探针没有采集到结果")
+    if p.get("problems") is None:
+        return (False, "走查探针返回结构不对（没有 problems 字段）")
+
+    problems = []
+    empty = p.get("emptyNames") or []
+    if empty:
+        problems.append("可聚焦控件没有可访问名称：" + "、".join(empty[:4]))
+    if p.get("orderMismatch"):
+        problems.append("阅读顺序与视觉顺序不一致：" + "；".join(p["orderMismatch"][:2]))
+
+    heads = p.get("headings") or []
+    if not heads:
+        problems.append("页面里找不到可见标题")
+    elif [h["level"] for h in heads].count(1) != 1:
+        problems.append(f"可见标题里有 {[h['level'] for h in heads].count(1)} 个 h1，应正好 1 个")
+
+    live = {x.get("id"): x for x in (p.get("live") or []) if x.get("id")}
+    if not live:
+        problems.append("页面里没有任何 live region")
+    for need in ("toast", "statusChip"):
+        node = live.get(need)
+        if not node:
+            problems.append(f"#{need} 不是 live region（读屏听不到它的更新）")
+        elif node.get("effective") not in ("polite", "assertive"):
+            problems.append(f"#{need} 的 aria-live 是 {node.get('effective')}，不会播报")
+    ann_node = live.get("srAnnounce")
+    if not ann_node:
+        problems.append("#srAnnounce 不存在——流式回答结束后没有任何「完成」播报")
+    elif ann_node.get("effective") != "polite" or ann_node.get("atomic") != "true":
+        problems.append(f"#srAnnounce 配置不对（live={ann_node.get('effective')}，"
+                        f"atomic={ann_node.get('atomic')}）")
+
+    s = p.get("streaming") or {}
+    snaps = s.get("snapshots") or {}
+    mid = snaps.get("midStream") or {}
+    after = snaps.get("after") or {}
+    if not mid:
+        problems.append("流式阶段没有抓到快照（假的 chatStream 没被调用？）")
+    else:
+        if mid.get("live") != "off":
+            problems.append(f"流式期间 #chatScroll 的 aria-live 是 {mid.get('live')!r}，"
+                            "读屏会把每个 delta 当成新内容重播（应为 off）")
+        if mid.get("busy") != "true":
+            problems.append("流式期间 #chatScroll 没有 aria-busy=\"true\"")
+    if after.get("live") == "off":
+        problems.append("流式结束后 aria-live 没有恢复（会一直静音）")
+    if after.get("busy") == "true":
+        problems.append("流式结束后 aria-busy 没有复位")
+
+    ann = s.get("announcer") or {}
+    if not ann.get("exists"):
+        problems.append("#srAnnounce 不存在")
+    elif "回答已生成" not in (ann.get("text") or ""):
+        problems.append(f"完成后 #srAnnounce 里的文本不对：{ann.get('text')!r}")
+
+    if problems:
+        return (False, "；".join(problems))
+    return (True,
+            f"{len(p.get('focusables') or [])} 个可聚焦控件全部有名字；"
+            f"{len(heads)} 个标题层级正确；{len(live)} 个 live region 配置正确；"
+            f"流式 {s.get('deltas')} 个 delta 期间 aria-live=off、结束后恢复并播报一次"
+            f"（期间整段替换 {s.get('mutations')} 次）")
+
+
 @case("首页加载期没有 JS 报错")
 def t_home_errors():
     errs = ENV["home"]["errors"]
@@ -517,6 +587,8 @@ def main() -> int:
         xss_js = tmp / "xss_probe.js"
         xss_js.write_text(XSS_PROBE_JS, encoding="utf-8")
         ENV["xss"] = _probe_script(node, base, "/", xss_js, tmp / "xss.json")
+        print("  正在采集 无障碍 AX 树代理走查（含流式播报）…")
+        ENV["a11y"] = _probe_script(node, base, "/", A11Y, tmp / "a11y.json")
         print()
     except Exception:
         print("采集阶段出错：")

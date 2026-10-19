@@ -8,10 +8,11 @@
 退出码（别把 0 理解成"提示词也没问题"）：
     0 = 本次要求的层全部通过（--no-llm 时只代表层 1）
     1 = 有指标跌破红线
-    3 = 层 2 本应执行但没执行（如 Ollama 未运行）——结果不完整，不能当"全部达标"
+    3 = 层 2 / 模型评审本应执行但没执行（如 Ollama 未运行）——结果不完整，不能当"全部达标"
 
 产出：
     tests/eval_report.md   —— 可读的评测报告
+    tools/_judge_report.md —— 模型评审报告（第二层附加，手工层）
     控制台表格
 
 评测分两层，这是刻意的设计：
@@ -27,6 +28,12 @@
     第二层（端到端层，需要 Ollama，分钟级）
         追问正确率      信息不足的问题有没有先追问
         库外法规声明率   回答正文里真的写了"未收录"，且没有转述条文内容
+
+    第二层附加（模型评审 / LLM-as-judge，需要 Ollama，手工层，不进 CI）
+        幻觉率          judge 判「回答里出现无依据具体事实」的题数 / 有回答的判卷题数
+        三个维度        忠于条款 / 不编造 / 回答切题（1-5 分）
+        为什么手工：CI 不装 Ollama（铁律三），提示词/换模型/JSON 兜底退化
+        在 CI 里没有任何信号；这一层只在发布前由人跑，且只作参考、不进红线。
 
 为什么必须分两层：第一层用**被评测的同一个阈值**来定义"正确答案"是危险的闭环自证，
 它结构上不可能发现"阈值过了但不该答"的问题——库外法规、适用性判定这两类问题
@@ -118,7 +125,15 @@ def expect_label(row: dict) -> str:
     return EXPECT_LABEL.get(row.get("expect", ""), row.get("expect", ""))
 
 
-def build_report(result: dict, verdict: dict, e2e: dict | None, e2e_verdict: dict | None) -> str:
+def _judge_rate_text(stats: dict) -> str:
+    """幻觉率的人类可读形式；没有可计入的回答时明确写「无法判定」。"""
+    if not stats.get("substantive"):
+        return "无法判定（没有可计入的回答）"
+    return f"{stats['hallucinations']}/{stats['substantive']}（{stats['rate']:.0%}）"
+
+
+def build_report(result: dict, verdict: dict, e2e: dict | None, e2e_verdict: dict | None,
+                 judge: dict | None = None) -> str:
     rows, stats = result["rows"], result["stats"]
     lines = [
         "# 安全合规自查助手 · 评测报告",
@@ -147,6 +162,13 @@ def build_report(result: dict, verdict: dict, e2e: dict | None, e2e_verdict: dic
     lines.append(verdict_line(e2e_verdict, "第二层 · 端到端"))
     if e2e_verdict is None:
         lines.append("- ⚠️ 第二层 · 端到端：未执行（本报告不代表提示词/模型输出质量）")
+    if judge is not None:
+        if judge.get("executed"):
+            lines.append(
+                f"- 第二层附加 · 模型评审：已执行（幻觉率 {_judge_rate_text(judge['stats'])}；参考值，不是红线）"
+            )
+        else:
+            lines.append(f"- 第二层附加 · 模型评审：未执行（{judge.get('reason', '')}）")
     lines.append("")
 
     def metrics_table(v: dict, label: str) -> None:
@@ -201,6 +223,46 @@ def build_report(result: dict, verdict: dict, e2e: dict | None, e2e_verdict: dic
             "## 第二层 · 端到端",
             "",
             f"未运行：{e2e_verdict.get('reason', '')}",
+        ]
+
+    # -------- 第二层附加：模型评审（手工层，不进 CI） --------
+    lines += ["", "## 第二层附加 · 模型评审与幻觉率（手工）", ""]
+    if judge is None:
+        lines.append("未执行（本次没有进入模型评审）。")
+    elif not judge.get("executed"):
+        lines += [
+            f"**未执行**：{judge.get('reason', '')}",
+            "",
+            "> 幻觉率缺失，本报告不能代表答案质量。**不要把它当成通过。**",
+        ]
+    else:
+        st = judge["stats"]
+        lines += [
+            f"- 判卷：{st['judged']}/{st['total']} 题（无法判定 {st['failed']} 题）",
+            f"- **幻觉率：{_judge_rate_text(st)}**"
+            "（分子 = 出现无依据具体事实的题数；分母 = 有回答的判卷题数）",
+            f"- 平均分：忠于条款 {st['means']['faithful']} / "
+            f"不编造 {st['means']['no_fabrication']} / 回答切题 {st['means']['relevant']}",
+            "",
+            "| 编号 | 引用条款 | 忠于条款 | 不编造 | 回答切题 | 幻觉 | 问题 |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for row in judge.get("rows", []):
+            if "verdict" not in row:
+                lines.append(f"| {row.get('id', '')} | - | - | - | - | 未判定 | "
+                             f"{row.get('error', '')[:60]} |")
+                continue
+            v = row["verdict"]
+            lines.append(
+                f"| {row['id']} | {', '.join(row.get('citation_ids', [])) or '-'} | "
+                f"{v['faithful']} | {v['no_fabrication']} | {v['relevant']} | "
+                f"{'是' if row.get('hallucinated') else '否'} | {row.get('question', '')[:26]} |"
+            )
+        lines += [
+            "",
+            "评审报告（含低分题全文）：`tools/_judge_report.md`；"
+            "人工标注与一致率：`tools/llm_judge.py --agreement-only`。",
+            "这一层只在本地手工跑，**不进 CI，也不进红线**。",
         ]
 
     lines.append("")
@@ -284,7 +346,47 @@ def _run(args: argparse.Namespace) -> int:
                 flag = "OK" if item["passed"] else "XX"
                 print(f"{flag}  {item['name']:<16} {item['actual']}/{item['total']}   要求 {item['required']}")
 
-    REPORT_FILE.write_text(build_report(result, verdict, e2e, e2e_verdict), encoding="utf-8")
+    # ---------------- 第二层附加：模型评审与幻觉率（手工层） ----------------
+    judge: dict | None = None
+    if args.no_llm:
+        judge = {"executed": False, "reason": "--no-llm：本次未执行模型评审"}
+    elif e2e_verdict is None:
+        judge = {
+            "executed": False,
+            "reason": f"层 2 未执行（{(e2e or {}).get('reason', '')}），模型评审未执行",
+        }
+    else:
+        print()
+        print("[评测] 第二层附加 · 模型评审（LLM-as-judge，重新答题判卷；手工层，不进 CI）…")
+        try:
+            sys.path.insert(0, str(ROOT / "tools"))
+            import llm_judge  # noqa: E402
+
+            judge = llm_judge.judge_hit_questions(limit=args.limit, isolate_db=False)
+        except Exception as exc:  # 评审工具自身坏了也不能装作没发生
+            judge = {"executed": False,
+                     "reason": f"评审工具异常：{type(exc).__name__}: {exc}"}
+        if judge.get("executed"):
+            st = judge["stats"]
+            print(f"[评测] 幻觉率：{_judge_rate_text(st)}；判卷 {st['judged']} 题，"
+                  f"无法判定 {st['failed']} 题")
+            for row in judge["rows"]:
+                if "verdict" not in row:
+                    print(f"      {row['id']}  未判定：{row.get('error', '')[:80]}")
+                    continue
+                v = row["verdict"]
+                refs = ",".join(row.get("citation_ids", [])[:2]) or "-"
+                print(f"      {row['id']}  引用={refs:<22} "
+                      f"评分 {v['faithful']}/{v['no_fabrication']}/{v['relevant']}  "
+                      f"{'幻觉' if row.get('hallucinated') else '无幻觉'}")
+            print(f"[评测] 评审报告：{llm_judge.REPORT_FILE}")
+        else:
+            print(f"[评测] 模型评审未执行：{judge.get('reason', '')}")
+            print("[评测] 注意：幻觉率缺失，本次结果不完整（不能当成答案质量结论）")
+
+    REPORT_FILE.write_text(
+        build_report(result, verdict, e2e, e2e_verdict, judge), encoding="utf-8"
+    )
     print()
     print(f"[评测] 报告已写入 {REPORT_FILE}")
 
@@ -300,7 +402,13 @@ def _run(args: argparse.Namespace) -> int:
     if e2e_verdict is None:
         print("[评测] 层 1 指标达标，但层 2 端到端未执行 —— 结果不完整，不能算「全部达标」")
         return 3
-    print("[评测] ✅ 两层指标全部达标")
+    if judge is not None and not judge.get("executed"):
+        print("[评测] 层 1/层 2 通过，但模型评审未执行 —— 幻觉率缺失，结果不完整")
+        return 3
+    if judge is not None and not (judge.get("stats") or {}).get("judged"):
+        print("[评测] 模型评审一道题都没判出来 —— 幻觉率不可用，结果不完整")
+        return 3
+    print("[评测] ✅ 两层指标全部达标（含模型评审；幻觉率为参考值，不是红线）")
     return 0
 
 

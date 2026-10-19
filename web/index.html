@@ -120,6 +120,12 @@
       </div>
     </div>
 
+    <!-- 流式播报：对话区在生成期间会被临时设成 aria-live="off"（否则每来一段
+         delta 就把整段回答重播一遍，读屏根本没法读），所以"好了没有"必须由这个
+         独立的 live region 说一次。role=status 自带 polite；aria-atomic 保证整句
+         完整播报而不是只播变化的那几个字。 -->
+    <div class="sr-only" id="srAnnounce" role="status" aria-live="polite" aria-atomic="true"></div>
+
     <div class="composer-wrap">
       <div class="composer">
         <label class="sr-only" for="input">描述您的系统情况</label>

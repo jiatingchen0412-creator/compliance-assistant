@@ -510,6 +510,17 @@ function renderFollowups(box, questions) {
   box.appendChild(wrap);
 }
 
+/* ---------------- 读屏播报 ---------------- */
+// 对话区（role=log）在生成期间被临时设成 aria-live="off"，否则每来一段 delta
+// 就读屏重播一次整段回答。所以"生成完了没有"要由这个独立的 live region 说一次。
+// 先清空再写：同一段文字连写两次时，读屏不会重新播报。
+function announce(text) {
+  const box = document.getElementById('srAnnounce');
+  if (!box || !text) return;
+  box.textContent = '';
+  setTimeout(() => { box.textContent = text; }, 40);
+}
+
 /* ---------------- 发送 ---------------- */
 async function send(text) {
   if (state.sending) return;
@@ -533,6 +544,10 @@ async function send(text) {
       <span class="typing"><span></span><span></span><span></span></span>
       <span class="status-text">正在检索知识库条款…</span>
     </div></div>`;
+  // 流式期间把对话区静音：每个 delta 都会整段重写 innerHTML，保持 polite 会让
+  // 读屏从第一段开始反复重读。生成结束后在 finally 里恢复，并用 announce() 播报一次结果。
+  scroll.setAttribute('aria-busy', 'true');
+  scroll.setAttribute('aria-live', 'off');
   scroll.appendChild(row);
   scrollTop(true);
 
@@ -542,6 +557,7 @@ async function send(text) {
   const statusEl = row.querySelector('.status-text');
   let textEl = null;
   let acc = '';
+  let collected = null;   // meta 里的引用/风险条数，用于收尾时给读屏播一句摘要
 
   try {
     await API.chatStream(text, state.sessionId, {
@@ -634,6 +650,10 @@ async function send(text) {
         }
         bubble.appendChild(tools);
 
+        collected = {
+          cites: (d.citations || []).length,
+          risks: (d.risks || []).length,
+        };
         scrollTop();
         loadSessions();
       },
@@ -646,12 +666,27 @@ async function send(text) {
   } finally {
     state.sending = false;
     document.getElementById('btnSend').disabled = false;
+    // 恢复对话区的默认播报状态（role=log 本身是 polite；去掉临时覆盖的 off）
+    scroll.setAttribute('aria-busy', 'false');
+    scroll.removeAttribute('aria-live');
     // 流断了但一个字都没收到（后端进程崩了、连接被重置、被中途掐掉）：
     // 占位气泡不能就这么留着，否则页面永远停在"正在检索…"，
     // 用户既不知道为什么没结果，也没有任何可以点的东西。
     // 已经渲染过错误提示的就不再覆盖一遍。
     if (!textEl && !bubble.querySelector('.msg-error')) {
       bubble.innerHTML = '<div class="msg-error">没有收到回答：连接可能已中断，请重试。</div>';
+    }
+    // 收尾必须给读屏一句话：错误照念，成功则报字数与引用条数
+    const errBox = bubble.querySelector('.msg-error');
+    if (errBox) {
+      announce(errBox.textContent.trim());
+    } else if (collected) {
+      const chars = acc.replace(/\s+/g, '').length;
+      const cite = collected.cites ? `，引用 ${collected.cites} 条条款` : '';
+      const risk = collected.risks ? `，${collected.risks} 条风险提示` : '';
+      announce(`回答已生成，共 ${chars} 个字${cite}${risk}`);
+    } else {
+      announce('回答已生成');
     }
     scrollTop();
   }

@@ -99,14 +99,14 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 | 项 | 值 | 说明 |
 |---|---|---|
 | `recall_min` | 25 | 该命中的 25 题里至少对 25 题 |
-| `reject_required` | 10 | 10 道无关题必须全部拒答（**一票否决**） |
+| `reject_required` | 16 | 16 道无关题必须全部拒答（**一票否决**） |
 | `risk_min` | 8 | 9 道高风险题至少标对 8 题 |
 | `outkb_required` | 6 | 点名库外法规的题必须全部识别（**一票否决**） |
 | `undet_required` | 27 | 适用性判定题必须全部拦住（**一票否决**） |
 | `clarify_required` | 4 | 笼统问题必须先追问（**一票否决**） |
 | `forbid_max_false` | 0 | ⚠️ 误标一道都不许有 |
 
-`EXPECTED_COUNTS`（hit 25 / reject 10 / out_of_kb 6 / undeterminable 27 / clarify 4 / risk_forbid 2）
+`EXPECTED_COUNTS`（hit 25 / reject 16 / out_of_kb 6 / undeterminable 27 / clarify 4 / risk_forbid 2）
 卡的是**题库数量本身**——只看通过数的话，题库被删掉一半，红线反而显示"通过"。
 加题必须同步改这两个常量。
 
@@ -114,8 +114,8 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 > v1.1 的质量门就犯过这个错——阈值过了但本不该回答的问题，质量门结构上发现不了。
 > 五类判定现在各自独立。
 
-> 第二个结构性教训：**dev 集全绿不等于系统能用**。72 道 dev 题都是我们自己写的、
-> 写完就照着它调参，所以另有一套`tests/eval_holdout.json`（31 题，指纹锁死）。
+> 第二个结构性教训：**dev 集全绿不等于系统能用**。78 道 dev 题都是我们自己写的、
+> 写完就照着它调参，所以另有一套`tests/eval_holdout.json`（37 题，指纹锁死）。
 > 它第一次跑就抓到"该拒答 0/3"——见 `docs/07-测试与验收规范.md`。
 > 改检索/阈值/领域词表后，**dev 集调参 → 留出集只跑一次**，别拿留出集当调参靶子。
 
@@ -124,9 +124,9 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（15 个套件；其中 12 个逐条计数，共 195 条用例）
+# 跑全部测试（15 个套件；其中 12 个逐条计数，共 196 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
-.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（72 题，不需要 Ollama，秒级）
+.venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（78 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
 .venv\Scripts\python.exe tests\test_scope.py
 .venv\Scripts\python.exe tests\test_guard.py
