@@ -160,6 +160,42 @@ def test_build_search_text():
     return True, f"正确拼接并跳过空值：{got!r}"
 
 
+# --------------------------------------------------------------------------
+# 分词边界对齐（标题加权不能靠子串）
+# --------------------------------------------------------------------------
+@case("「防火」不会命中「防火墙」（标题加权必须按分词边界对齐）")
+def test_aligned_in_rejects_substring():
+    # 真实缺陷：问「我们的防火墙策略全都放行」时，条款 8.1.1.6（机房防火）
+    # 因为标题「防火」是「防火墙」的子串而拿到 +0.2，以 0.6955 压过
+    # 真正该排第一的 8.1.3.3（0.6927），而它的关键词分是 0。
+    glued = "我们的防火墙策略全都放行"
+    if n.aligned_in("防火", glued):
+        return False, f"「防火」被当成命中了「防火墙」所在句：{glued!r}"
+    # 反过来，真的在说防火时必须命中
+    real = "机房没做防火，也没有防火墙"
+    if not n.aligned_in("防火", real):
+        return False, f"「防火」自己成词时却没命中：{real!r}"
+    # 长标题按词对齐也要能命中
+    if not n.aligned_in("安全策略", "我们的安全策略怎么定"):
+        return False, "「安全策略」自己成词时没命中"
+    return True, "子串不算命中，整词才算"
+
+
+@case("条款编号两侧不能接数字或点（8.1.4.1 不能命中 8.1.4.10）")
+def test_clause_id_named_boundary():
+    from app.retrieval import _clause_id_named
+
+    if _clause_id_named("8.1.4.1", "8.1.4.10 讲的是什么"):
+        return False, "8.1.4.1 把 8.1.4.10 的查询也算成点名了"
+    if not _clause_id_named("8.1.4.1", "8.1.4.1 讲的是什么"):
+        return False, "8.1.4.1 被点名时没识别出来"
+    if not _clause_id_named("A09:2021-3", "A09:2021-3 这条要求什么？"):
+        return False, "带冒号的编号没识别出来"
+    if _clause_id_named("A09:2021-3", "A09:2021-30 呢"):
+        return False, "A09:2021-3 把 A09:2021-30 也算成点名了"
+    return True, "编号两侧的边界成立，前后缀编号互不干扰"
+
+
 def main() -> int:
     print("=" * 70)
     print("文本归一化测试 · 不依赖 Ollama 与数据库")

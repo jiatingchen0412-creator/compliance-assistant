@@ -154,6 +154,49 @@ def tokenize(text: str) -> str:
 
 
 @lru_cache(maxsize=2048)
+def token_boundaries(text: str) -> frozenset[int]:
+    """返回分词边界在字符串里的字符下标集合（一定包含 0 与 len(text)）。
+
+    用来判断「某个词是否作为整体出现在句子里」。中文没有空格，光靠
+    `"防火" in "防火墙"` 判断会把「防火」当成命中——真事：问「我们的防火墙
+    策略全都放行」时，条款 8.1.1.6（机房防火）因此拿到 +0.2 标题加权，
+    以 0.6955 压过真正该排第一的 8.1.3.3（0.6927），而它的关键词分是 0。
+    加上边界判断后，只有「防火」自己成词时才算命中。
+    """
+    if not text:
+        return frozenset({0})
+    bounds = {0}
+    pos = 0
+    for tok in jieba.lcut(text):
+        pos += len(tok)
+        bounds.add(pos)
+    return frozenset(bounds)
+
+
+def aligned_in(needle: str, haystack: str, bounds: frozenset[int] | None = None) -> bool:
+    """needle 是否**按分词边界对齐**地出现在 haystack 里。
+
+    「对齐」= 命中片段的左右两端都落在词边界上，也就是它作为一个完整的词
+    序列出现，而不是被更长词语包住的一部分。
+    """
+    if not needle or not haystack:
+        return False
+    if len(needle) > len(haystack):
+        return False
+    bounds = bounds if bounds is not None else token_boundaries(haystack)
+    n = needle.lower()
+    h = haystack.lower()
+    start = 0
+    while True:
+        i = h.find(n, start)
+        if i < 0:
+            return False
+        if i in bounds and (i + len(n)) in bounds:
+            return True
+        start = i + 1
+
+
+@lru_cache(maxsize=2048)
 def expand_query(text: str) -> list[str]:
     """把用户口语扩展成检索用的关键词列表。
 

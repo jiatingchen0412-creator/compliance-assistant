@@ -19,7 +19,7 @@ import threading
 from typing import Any
 
 from . import config, db
-from .normalize import expand_query, tokenize
+from .normalize import aligned_in, expand_query, token_boundaries, tokenize
 
 log = logging.getLogger(__name__)
 
@@ -45,6 +45,32 @@ _engine: "RetrievalEngine | None" = None
 
 def _clip01(value: float) -> float:
     return max(0.0, min(1.0, float(value)))
+
+
+def _clause_id_named(clause_id: str, question: str) -> bool:
+    """条款编号是否被用户点名——两侧不能再接数字或点。
+
+    只做子串判断会让「8.1.4.1」命中「8.1.4.10」的查询：后者问的是另一条，
+    却给前一条加了 +0.5。编号是数字加点的字符集，加两侧边界就够了。
+
+    大小写在这里统一处理（调用方传原始问句即可），否则 A09:2021-3 这类
+    带字母的编号会因大小写对不上而静默失效。
+    """
+    cid = (clause_id or "").lower()
+    q_low = (question or "").lower()
+    if not cid:
+        return False
+    start = 0
+    while True:
+        i = q_low.find(cid, start)
+        if i < 0:
+            return False
+        before_ok = i == 0 or not (q_low[i - 1].isdigit() or q_low[i - 1] == ".")
+        j = i + len(cid)
+        after_ok = j >= len(q_low) or not (q_low[j].isdigit() or q_low[j] == ".")
+        if before_ok and after_ok:
+            return True
+        start = i + 1
 
 
 def _vec_to_blob(vec) -> bytes:
@@ -286,6 +312,8 @@ class RetrievalEngine:
         extra_terms = expand_query(question)
         # 口语扩展词权重低一些，靠 BM25 自然体现；这里放进同一路检索
         all_tokens = list(dict.fromkeys(base_tokens + extra_terms))
+        # 标题加权要判断「是不是作为完整的词出现」，见 aligned_in()
+        bounds = token_boundaries(question)
 
         kw_scores = self._keyword_scores(question, all_tokens)
         vec_scores = self._vector_scores(question)
@@ -336,11 +364,11 @@ class RetrievalEngine:
             item["score_vector"] = round(detail["vector"], 4)
 
             # 条款编号被直接点名 → 强力加权，用户搜 "8.1.4.1" 必须第一条就是它
-            q_low = question.lower()
-            if item["clause_id"].lower() in q_low:
+            if _clause_id_named(item["clause_id"], question):
                 item["score"] = round(min(1.0, item["score"] + 0.5), 4)
                 item["score_boost"] = "clause_id_exact"
-            elif item["title"] and item["title"].lower() in q_low:
+            elif item["title"] and aligned_in(item["title"], question, bounds):
+                # 标题加权必须按分词边界对齐，否则「防火」会命中「防火墙」
                 item["score"] = round(min(1.0, item["score"] + 0.2), 4)
                 item["score_boost"] = "title_exact"
 
