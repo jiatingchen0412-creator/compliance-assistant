@@ -124,7 +124,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（16 个套件；其中 13 个逐条计数，共 223 条用例）
+# 跑全部测试（16 个套件；其中 13 个逐条计数，共 229 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
 .venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（93 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）

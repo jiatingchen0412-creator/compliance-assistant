@@ -541,15 +541,14 @@ def answer_question(
     # 「《…法/条例/规定/办法》」的结构再兜一层：不在已知别名里的，一律声明
     # 不在本次检索范围。声明本身是服务端写的，模型删不掉。
     known_law_names = [a for d in all_out_of_kb for a in d["all_aliases"]]
-    unsupported_laws = guard.detect_unsupported_law_names(answer_text, known_law_names)
-    if legacy_answer:
-        # 兼容垫片：模型在已废弃的 answer 字段里提到清单外法规，同样要声明一次。
-        unsupported_laws = list(
-            dict.fromkeys(
-                unsupported_laws
-                + guard.detect_unsupported_law_names(legacy_answer, known_law_names)
-            )
-        )
+    # 同样只扫模型写的文本。正文由知识库字段拼装，用户导入的公司制度里完全可能
+    # 有「《企业备份管理规定》第十三条规定…」这样的句子——拿正文跑「像不像法规名」
+    # 的形状判定，会把知识库原文当成模型转述（t31 独立审计复现过）。
+    unsupported_laws = (
+        guard.detect_unsupported_law_names(legacy_answer, known_law_names)
+        if legacy_answer
+        else []
+    )
     if unsupported_laws:
         # 名称一律**不回显**。这一层认的是「长得像法规名」的形状
         # （《…法/条例/规定/办法》），而形状判断不等于内容可信：
@@ -573,15 +572,18 @@ def answer_question(
             "相关表述我无法核实，请以官方发布的标准文本为准。\n\n" + answer_text
         )
 
-    # ---- RT18-06：正文里残留的「第X条…规定」条文转述 ----
-    # 知识库用的是 8.1.4.1 / PR.AA-01 / A01:2021 这类编号，没有「第X条」这种
-    # 形式。正文出现「第十三条规定…」几乎一定是模型凭记忆转述库外法规。
-    # 这种句子不能原样留给用户，也不能只写进前端折叠的"技术详情"——这里就地
-    # 标注"不是知识库依据"，标记由服务端写，模型删不掉。
-    answer_text, unverified_clauses = guard.annotate_unverified_clause_claims(answer_text)
+    # ---- RT18-06：模型是否在凭记忆转述库外条文 ----
+    # 知识库用的是 8.1.4.1 / PR.AA-01 / A01:2021 这类编号，没有「第X条」这种形式。
+    # **但这条判定只能扫模型写的 legacy_answer，绝不能扫拼装后的正文。**
+    # 结构性改造之后正文 100% 来自知识库字段与服务端常量，用户导入的公司制度里
+    # 完全可能有「《企业备份管理规定》第十三条规定…」这样的句子——那是知识库原文，
+    # 不是模型转述。Codex 独立审计复现过：导入一个自定义标准后，正文每句都被包上
+    # 「不是知识库依据」，等于防幻觉机制自己制造了幻觉提示。
+    # 模型写的文本本来也进不了正文，所以这里只记一条技术备注。
+    _, unverified_clauses = guard.annotate_unverified_clause_claims(legacy_answer)
     if unverified_clauses:
         notes.append(
-            f"回答中有 {unverified_clauses} 处「第X条」式条文转述，已标注为「不是知识库依据」"
+            f"模型这次试着凭记忆转述 {unverified_clauses} 处「第X条」式条文，已丢弃（正文由知识库拼装）"
         )
 
     # ---- 是否要找用户补充信息 ----
@@ -632,12 +634,7 @@ def answer_question(
         need_clarify = True
         if not followups:
             followups = list(scope.CLARIFY_FOLLOWUPS)
-        answer_text = (
-            answer_text
-            + "\n\n⚠️ 模型这次试图对您的系统下等级结论，该内容已被丢弃："
-            "具体定到哪一级，需要结合你们的业务性质、数据规模和影响面判断，"
-            "本工具不替您下这个结论。"
-        )
+        answer_text = answer_text + "\n\n" + guard.LEVEL_CONCLUSION_NOTICE
         notes.append("模型的回答里出现了等级结论，已丢弃并降级为「需要补充信息」")
 
     answer_text = guard.ensure_disclaimer(answer_text)

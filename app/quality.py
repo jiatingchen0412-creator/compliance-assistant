@@ -157,14 +157,23 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
             stats["hit_total"] += 1
             patterns = q.get("must_include_any") or []
             recalled = any(clause_matches(cid, patterns) for cid in got) if patterns else True
+            # 知识库完全没有的话题（价格 / 机构推荐 / 通过率）会被服务端直接拒答，
+            # 连模型都不调。如果一道"该命中"的题也被这么判了，用户收到的是一段
+            # 「本工具不包含价格与费用的信息」——那是拒答，不是回答。
+            # 以前评测不看这一路：h10「优惠券能重复领取…」被判 ok=True，
+            # 生产路径却在拒答（t31 独立审计复现）。所以这里也要算失败。
+            no_kb_topic = scope.detect_no_kb_topic(q["question"])
             # 必须"召回了" **并且**"真的回答给用户了"才算通过。
             # 只看召回会有盲区：阈值调得过高的，条款照样在候选里（召回满分），
             # 但用户实际收到的是"知识库中未找到"——这显然是失败的。
-            if found and recalled:
+            if found and recalled and not no_kb_topic:
                 stats["hit_ok"] += 1
             else:
                 ok = False
-                if blocked:
+                if no_kb_topic:
+                    detail = (f"被「{no_kb_topic}」闸门拒答 —— 但这题是真题，"
+                              f"说明话题模式误伤（同一句话在生产路径上也答不出来）")
+                elif blocked:
                     detail = (f"被领域拦截（{blocked_domain}：{'、'.join(blocked_terms)}）"
                               f"—— 但这题是真题，说明词表误伤，要改 CYBER_TERMS 或剔词")
                 elif not found:

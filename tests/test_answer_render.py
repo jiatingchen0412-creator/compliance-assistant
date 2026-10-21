@@ -516,10 +516,63 @@ def test_notes_do_not_echo_model_text() -> tuple[bool, str]:
     )
 
 
-def _run_chat(question: str, payload: dict) -> dict:
+class _SingleClauseEngine:
+    """只返回一条指定条款的检索桩（用于验证知识库原文不被二次加工）。"""
+
+    def __init__(self, clause: dict):
+        self._clause = clause
+
+    def search(self, question: str, top_k: int = 6) -> dict:
+        return {"results": [dict(self._clause, score=0.95)], "best_score": 0.95}
+
+
+@case("知识库里带「第X条规定」的条文不会被标成「不是知识库依据」（t31 自伤）")
+def test_kb_clause_claim_not_annotated() -> tuple[bool, str]:
+    """Codex 独立审计的 medium 项。
+
+    用户导入的公司制度里完全可能有「《企业备份管理规定》第十三条规定…」这样的
+    句子，那正是知识库原文。结构性改造后正文只由知识库字段与服务端常量拼装，
+    再对**正文**跑「第X条」判定只会误伤自己——旧实现会把这一整句包成
+    「（以下内容不是知识库依据，仅供定位参考：…）」。
+    """
+    clause = {
+        "clause_id": "AUDIT-1",
+        "title": "备份要求",
+        "summary": "《企业备份管理规定》第十三条规定，应每日执行备份。",
+        "text": "《企业备份管理规定》第十三条规定，应每日执行备份。",
+        "standard_name": "企业备份管理规定",
+        "risk_tags": [],
+    }
+    payload = {
+        "answer": "",
+        "citations": [],
+        "summary": "",
+        "found": True,
+        "clauses": ["AUDIT-1"],
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [],
+    }
+    result = _run_chat("备份要求", payload, engine=_SingleClauseEngine(clause))
+    text = str(result.get("answer") or "")
+    problems = []
+    if "第十三条规定" not in text:
+        problems.append("知识库原文被删掉了")
+    if "不是知识库依据" in text:
+        problems.append("知识库原文被标成「不是知识库依据」")
+    if "未收录" in text:
+        problems.append("多出一条「未收录该法规」的声明")
+    return check(
+        not problems,
+        "知识库原文逐字保留，没有多出任何「未收录 / 不是依据」的声明",
+        f"防幻觉机制咬了知识库自己：{problems}｜正文={text[:220]!r}",
+    )
+
+
+def _run_chat(question: str, payload: dict, engine=None) -> dict:
     """调一次 answer_question，模型与会话全部打桩。"""
     objects = {
-        "get_engine": lambda: _Engine(),
+        "get_engine": lambda: engine or _Engine(),
         "_ensure_session": lambda sid, q: "sess-render-test",
         "_save_message": lambda *a, **k: 0,
         "_history": lambda *a, **k: [],

@@ -652,6 +652,13 @@ _LEVEL_CONCLUSION_NOTE = (
     "本工具不替您下这个结论。"
 )
 
+# 拼在正文尾部的那句服务端声明。放在这里而不是 chat.py 里内联，是为了让
+# answer.unaccounted_lines() 能整句比对——替服务端声明做校验的地方，
+# 必须和生成它的是同一个字符串，否则改一处就会静默失效。
+LEVEL_CONCLUSION_NOTICE = (
+    "⚠️ 模型这次试图对您的系统下等级结论，该内容已被丢弃：" + _LEVEL_CONCLUSION_NOTE
+)
+
 
 def strip_level_conclusions(text: str) -> tuple[str, bool]:
     """删掉"替用户下等级结论"的句子，返回 (清理后正文, 是否命中)。

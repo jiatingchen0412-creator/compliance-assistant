@@ -900,6 +900,73 @@ def test_level_conclusion_backstop() -> tuple[bool, str]:
     return True, "模型正文零采用、结论句零出现、中性说明与条款清单均在"
 
 
+@case("「凭证」不再等于会计单据：凭证填充 / OAuth / OWASP 编号都要放行（t31 审计 #4）")
+def test_credential_not_archive() -> tuple[bool, str]:
+    """裸「凭证」曾是不可条件域外词，把标准的网络安全话题一起拒答。
+
+    t31 独立审计用两条实测：`请解释 OWASP A07:2021 凭证填充`、`OAuth 凭证失窃
+    怎么处理？` 都被判成「文书与档案管理」。根因不只是词表——`A07:2021` 这种
+    「单个大写字母 + 两位数字」的 OWASP 编号，原来的 `_CLAUSE_ID_HINT` 也认不出，
+    所以连「用户点名了条款编号」这条锚点都失效。
+    """
+    should_pass = [
+        "请解释 OWASP A07:2021 凭证填充",
+        "OAuth 凭证失窃怎么处理？",
+        "凭证填充攻击怎么防",
+        "SAML 断言被伪造了怎么办",
+        "单点登录的凭据怎么保管",
+    ]
+    for q in should_pass:
+        blocked, domain, terms = scope.detect_out_of_domain(q)
+        if blocked:
+            return False, f"误伤：{q} → {domain}：{terms}"
+    should_block = [
+        ("会计凭证要保存几年", "会计凭证"),
+        ("报销凭证要留多久", "报销凭证"),
+        ("记账凭证丢了怎么办", "记账凭证"),
+        ("原始凭证要附在发票后面吗", "原始凭证"),
+    ]
+    for q, why in should_block:
+        blocked, domain, terms = scope.detect_out_of_domain(q)
+        if not blocked:
+            return False, f"漏拦：{q}（应因「{why}」判为文书与档案管理）"
+    return True, "5 条网络安全写法全部放行，4 条会计单据写法全部拦下"
+
+
+@case("价格闸门只认询价意图，事故里的金额不算问价（t31 审计 #3）")
+def test_price_gate_needs_inquiry_intent() -> tuple[bool, str]:
+    """裸「优惠」「几万」「块钱」曾把安全漏洞当成问价。
+
+    t31 独立审计实测：留出集 h10「优惠券能重复领取…一分钱也能下单」、
+    h11「被人刷了几万块钱的短信费」都被 `detect_no_kb_topic` 判成「价格与费用」，
+    生产路径直接拒答一段「本工具不包含价格与费用的信息」。
+    """
+    should_pass = [
+        "我们的优惠券能重复领取，订单金额也是前端提交上来的，改成一分钱也能下单。",
+        "短信验证码接口没有做频率限制，被人刷了几万块钱的短信费。",
+        "系统被人植入了需要几万块才能清除的勒索软件",
+    ]
+    for q in should_pass:
+        topic = scope.detect_no_kb_topic(q)
+        if topic:
+            return False, f"误伤（判成「{topic}」）：{q}"
+    should_block = [
+        ("做等保要花多少钱？", "多少钱"),
+        ("做等保要花几万块", "要花 + 几万"),
+        ("预算五万够吗", "预算"),
+        ("等保测评市场价多少", "市场价"),
+        ("等保测评有没有优惠", "测评 + 优惠"),
+        ("合规要花很多钱吗", "要花 + 很多钱"),
+        ("你们怎么收费", "怎么收费"),
+        ("五万块够不够", "金额 + 够不够"),
+    ]
+    for q, why in should_block:
+        topic = scope.detect_no_kb_topic(q)
+        if topic != "价格与费用":
+            return False, f"漏拦：{q}（应因「{why}」判为价格与费用，实际 {topic!r}）"
+    return True, "3 条事故/漏洞写法全部放行，8 条询价写法全部拦下"
+
+
 def main() -> int:
     print("=" * 70)
     print("问题范围判定测试 · 不依赖 Ollama 与数据库")

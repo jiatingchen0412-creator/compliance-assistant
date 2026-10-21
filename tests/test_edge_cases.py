@@ -719,6 +719,51 @@ def test_cors_not_wildcard():
     return True, f"恶意来源无 ACAO；同源 {allowed} 正常放行"
 
 
+@case("导入的条款字段不合法时：报错、且标准名一个字节没被改（t31 导入原子性）")
+def test_import_validation_is_atomic() -> tuple[bool, str]:
+    """Codex 独立审计的高危项。
+
+    旧顺序是「先 upsert_standard、再逐条校验条款」：一条 risk_tags 给成数字，
+    标准名就已经被覆盖、条款一条没写进去，而接口回的是「数据库未受影响」。
+    现在校验在任何写入之前完成，所以 ImportValidationError 真的等于「没动过」。
+    """
+    from app import ingest
+
+    before = db.query_one("SELECT name, version FROM standards WHERE id = ?", ("dengbao_2.0",))
+    if before is None:
+        return False, "临时库里没有 dengbao_2.0，用例前提不成立"
+    before_pair = (before["name"], before["version"])
+
+    tmp_dir = Path(tempfile.mkdtemp(prefix="edge_import_"))
+    path = tmp_dir / "broken.json"
+    payload = {
+        "standard": {"id": "dengbao_2.0", "name": "审计损坏名称"},
+        "clauses": [
+            {"clause_id": "8.1.4.1", "title": "身份鉴别", "text": "测试正文", "risk_tags": 1}
+        ],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    raised = ""
+    try:
+        ingest.import_standard_file(path, kind="json", source_kind="user")
+    except ingest.ImportValidationError as exc:
+        raised = str(exc)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"抛的不是 ImportValidationError，而是 {type(exc).__name__}: {exc}"
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if not raised:
+        return False, "坏数据没有被拒绝"
+
+    after = db.query_one("SELECT name, version FROM standards WHERE id = ?", ("dengbao_2.0",))
+    after_pair = (after["name"], after["version"]) if after else ("<缺失>", "<缺失>")
+    if after_pair != before_pair:
+        return False, f"标准名被改了：{before_pair} → {after_pair}（说明写库发生在校验之前）"
+    return True, f"坏数据在校验阶段被拒（{raised[:28]}…），标准名未变"
+
+
 @case("真实库一个字节都没变（测试不污染用户数据）")
 def test_real_db_untouched() -> tuple[bool, str]:
     """F4 守卫。放在文件最后，跑完前面所有用例之后才比哈希。"""
@@ -737,6 +782,31 @@ def test_real_db_untouched() -> tuple[bool, str]:
 # --------------------------------------------------------------------------
 # runner
 # --------------------------------------------------------------------------
+@case("点名的条款在候选截断之前就保住候选（t31 审计 #5）")
+def test_named_clause_survives_truncation():
+    """编号加权发生在截断之后，点名的条款会被永久丢掉。
+
+    t31 独立审计的复现：在一段很长的问题末尾写「请只解释 8.1.1.1。」，
+    8.1.1.1 的融合分只有 0.067、排第 65 名，被 `[:max(top_k*4, 20)]` 截掉，
+    加 +0.5 的那一行永远执行不到，用户点名要的条款从头到尾不出现。
+    """
+    engine = RetrievalEngine()
+    long_q = (
+        "我们存在默认账户与默认口令未修改的问题，也存在身份鉴别失败、"
+        "会话固定与会话管理缺陷。请只解释 8.1.1.1。"
+    )
+    got = [c["clause_id"] for c in engine.search(long_q, top_k=6)["results"]]
+    if "8.1.1.1" not in got:
+        return False, f"点名的 8.1.1.1 没进结果：{got}"
+    if got[0] != "8.1.1.1":
+        return False, f"点名的条款没排到第一：{got}"
+    # 反向：没点名时不该被这条逻辑塞进候选（否则等于永不截断）
+    other = engine.search("部署审计设备并保存日志", top_k=6)["results"]
+    if not other:
+        return False, "普通问题检索不出结果"
+    return True, f"长句里点名的 8.1.1.1 排第一（{got[0]}），普通问题不受影响"
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as fh:

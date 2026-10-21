@@ -387,12 +387,34 @@ async def import_file(file: UploadFile = File(...)):
         }
     except HTTPException:
         raise
+    except ingest.ImportValidationError as exc:
+        # 字段校验失败发生在任何写入之前（见 ingest.import_standard_file），
+        # 所以这里可以如实说「数据库未做任何改动」——这句话现在是有依据的，
+        # 不再是"备份存在"就推断出来的。
+        log.warning("导入被拒绝（字段校验没过，未写库）· 文件=%r", file.filename)
+        raise HTTPException(
+            status_code=400,
+            detail=f"导入失败：{exc}。数据校验没过，数据库未做任何改动。",
+        ) from exc
     except Exception as exc:
         log.exception("导入失败 · 文件=%r", file.filename)
+        # 真出错了：先试着自己恢复，再按恢复的实际结果说话。
+        # 之前这里只凭「备份文件存在」就写「数据库未受影响」，而实际上既没恢复、
+        # 也没检查——用户以为没事，其实标准名可能已经被覆盖了。
         if backup_file is None:
-            detail = f"导入失败：{exc}。导入前的备份未能生成，数据库未做任何改动。"
+            detail = (
+                f"导入失败：{exc}。导入前的备份没能生成，"
+                "数据库可能已被部分修改，请先备份 data/app.db 再排查。"
+            )
         else:
-            detail = f"导入失败：{exc}。数据库未受影响（导入前已备份：{backup_file.name}）。"
+            restored, restore_msg = backup_mod.restore_backup(backup_file)
+            if restored:
+                detail = f"导入失败：{exc}。已用导入前的备份自动恢复（{backup_file.name}）。"
+            else:
+                detail = (
+                    f"导入失败：{exc}。尝试用导入前的备份（{backup_file.name}）恢复失败：{restore_msg}。"
+                    "数据库可能已被部分修改，请手动恢复该备份。"
+                )
         raise HTTPException(status_code=400, detail=detail) from exc
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)

@@ -23,6 +23,14 @@ ProgressCb = Callable[[str, int, int], None]
 EMBED_TEXT_LIMIT = 400
 
 
+class ImportValidationError(ValueError):
+    """导入数据的字段不合法。
+
+    这个异常**只在写库之前**抛出：调用方可以据此断言「数据库一个字节都没动」。
+    没有它就没法区分「校验没过」和「写到一半炸了」，两种情况的提示措辞完全不同。
+    """
+
+
 def _noop(stage: str, done: int, total: int) -> None:
     return None
 
@@ -353,7 +361,24 @@ def import_standard_file(
     meta = data.get("standard") or {}
     clauses = data.get("clauses") or []
     if not isinstance(clauses, list):
-        raise ValueError(f"{path.name} 里 clauses 不是数组")
+        raise ImportValidationError(f"{path.name} 里 clauses 不是数组")
+
+    # ---- 先把条款全部归一化一遍，确认没毛病，再动数据库 ----
+    # 原来的顺序是先 upsert_standard 再逐条校验条款：只要有一条写错（比如
+    # risk_tags 给成数字而不是数组），标准名就已经被覆盖了、条款一条没写进去，
+    # 而接口还回「数据库未受影响」。校验必须在任何写入之前完成——这样
+    # ImportValidationError 才真的意味着「一个字节都没动」。
+    peek_id = str(meta.get("id") or "").strip()
+    if not peek_id:
+        raise ImportValidationError("standard.id 不能为空")
+    for index, raw in enumerate(clauses, 1):
+        if not isinstance(raw, dict):
+            raise ImportValidationError(f"第 {index} 条不是 JSON 对象")
+        try:
+            _normalize_clause(raw, peek_id)
+        except Exception as exc:
+            cid = str(raw.get("clause_id") or "").strip() or f"第 {index} 条"
+            raise ImportValidationError(f"{cid} 的字段不合法：{exc}") from exc
 
     std_id = upsert_standard(meta)
     std_name = meta.get("name") or std_id

@@ -301,6 +301,19 @@ class RetrievalEngine:
         return self._standards
 
     # ---------------- 主入口 ----------------
+    def _named_clause_rowids(self, question: str) -> list[int]:
+        """问句里被点名的条款对应的 rowid。
+
+        判据与下面的 +0.5 加权完全一致（`_clause_id_named`），这样"保住候选"
+        与"加权"不会各判各的。283 条逐条比一遍，比猜编号形状更可靠。
+        """
+        rows = db.query("SELECT id, clause_id FROM clauses WHERE enabled = 1")
+        return [
+            int(r["id"])
+            for r in rows
+            if _clause_id_named(str(r["clause_id"]), question)
+        ]
+
     def search(self, question: str, top_k: int | None = None) -> dict:
         """返回 {results: [...], best_score: float, vector_used: bool, query_terms: [...]}"""
         top_k = top_k or config.RETRIEVAL_TOP_K
@@ -339,6 +352,19 @@ class RetrievalEngine:
             fused[rid] = {"score": score, "keyword": k, "vector": v}
 
         order = sorted(fused.items(), key=lambda kv: kv[1]["score"], reverse=True)[:max(top_k * 4, 20)]
+        # 被用户明确点名的条款必须在截断**之前**就保住候选。
+        # +0.5 的编号加权在下面那个 for 循环里，也就是发生在截断之后。而被点名的
+        # 条款原始融合分往往极低——实测「…请只解释 8.1.1.1」里 8.1.1.1 只有 0.067、
+        # 排第 65 名，被 top_k*4=24 条截掉，加权那一行永远执行不到，用户点名要的
+        # 条款从头到尾不出现（t31 独立审计复现：requested_rank=65）。
+        named_rowids = self._named_clause_rowids(question)
+        if named_rowids:
+            keep = [rid for rid, _ in order]
+            for rid in named_rowids:
+                if rid not in keep:
+                    keep.append(rid)
+                    fused.setdefault(rid, {"score": 0.0, "keyword": 0.0, "vector": 0.0})
+            order = [(rid, fused[rid]) for rid in keep]
         rowids = [rid for rid, _ in order]
         placeholders = ",".join("?" for _ in rowids)
         rows = db.query(
@@ -363,9 +389,12 @@ class RetrievalEngine:
             item["score_keyword"] = round(detail["keyword"], 4)
             item["score_vector"] = round(detail["vector"], 4)
 
-            # 条款编号被直接点名 → 强力加权，用户搜 "8.1.4.1" 必须第一条就是它
+            # 条款编号被直接点名 → 强力加权，用户搜 "8.1.4.1" 必须第一条就是它。
+            # 只加 0.5 不够：实测长句里 8.1.1.1 的原始融合分只有 0.067，加到 0.567
+            # 仍排在几条 0.6+ 的条款后面。用户既然点名了这个编号，就不存在
+            # "相关性够不够"的问题——它必须是第一条（t31 审计 #5）。
             if _clause_id_named(item["clause_id"], question):
-                item["score"] = round(min(1.0, item["score"] + 0.5), 4)
+                item["score"] = round(max(item["score"] + 0.5, 0.95), 4)
                 item["score_boost"] = "clause_id_exact"
             elif item["title"] and aligned_in(item["title"], question, bounds):
                 # 标题加权必须按分词边界对齐，否则「防火」会命中「防火墙」

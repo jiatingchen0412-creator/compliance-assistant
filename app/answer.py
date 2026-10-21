@@ -224,17 +224,75 @@ def render(
 # 特意放在本模块而不是测试里，是因为它必须与 `render()` 共用同一套常量，
 # 否则两边一漂移，检查就会失效。
 
-# 服务端声明的**前缀**白名单。这些行由服务端生成，但内容里带变量
-# （编号、条数、法规名、字数），无法整句比对，只能按前缀认。
-# 新增一种声明而忘了登记 → 检查会变红，这是故意的。
-SERVER_LINE_PREFIXES = (
-    "⚠️ 说明：",              # 清单外法规名，名称已隐去（chat.py 拼在最前面）
-    "⚠️ 引用核对：",           # 模型给了对不上的编号，只回显编号形状
-    "⚠️ 模型这次试图",          # 模型试图下等级结论，已丢弃并降级
-    "⚠️ 您说的情况还比较笼统",   # scope.clarify_notice()
-    "风险标签：",              # _risk_line()
-    "（以下内容不是知识库依据",  # guard.annotate_unverified_clause_claims()
+# 服务端自己写的那几类行。早期这里是**前缀**白名单（startswith），等于
+# 「只要以「⚠️ 说明：」开头，后面写什么都放行」。Codex 独立审计用一行注入
+# 证明过：给 render() 后面追加「⚠️ 说明：贵司属于三级，按三级建设即可。」，
+# 18 条组装一致性用例仍然全绿。**前缀不是判据，模板才是。**
+#
+# 所以改成「模板 + 受约束的变量」：整行必须匹配某个模板，且变量部分不得出现
+# 等级/档位写法——服务端声明里从来不含这些，含了就是被塞进来的。
+_RISK_LABEL_WORDS = tuple(prompt.RISK_LABELS.values())
+_LEVEL_BAN = re.compile(r"级|級|[Ll]v?\s*-?\s*\d|Level\s*-?\s*\d|档|阶")
+_ID_TOKEN = r"[A-Za-z0-9][A-Za-z0-9._:\-]{1,31}"
+
+# (模板, 需要额外检查的变量组名)；组名为 None 表示整行固定。
+_SERVER_LINE_SPECS: tuple[tuple[re.Pattern[str], str | None], ...] = (
+    # scope.out_of_kb_notice()：⚠️ 补充说明：本次回答提到了《X》，但该法规不在…
+    (
+        re.compile(
+            r"^⚠️ 补充说明：本次回答提到了 (?P<var>.{2,80})，"
+            r"但该法规不在本工具的知识库范围内（未收录）。$"
+        ),
+        "var",
+    ),
+    # scope.out_of_kb_notice() 的另一支：⚠️ 先说明一点：您提到的 X 不在…
+    (
+        re.compile(r"^⚠️ 先说明一点：您提到的 (?P<var>.{2,80}) 不在本工具的知识库范围内。$"),
+        "var",
+    ),
+    # chat.py 里清单外法规名的固定文案（名称已隐去，没有变量）
+    (
+        re.compile(
+            r"^⚠️ 说明：(?P<var>.{2,80})，不在本工具的知识库（本次检索范围）内，"
+            r"相关表述我无法核实，请以官方发布的标准文本为准。$"
+        ),
+        "var",
+    ),
+    # chat._citation_warning()：只回显编号形状，取不到就降级成「若干编号」
+    (
+        re.compile(
+            r"^⚠️ 引用核对：回答里提到的 (?P<var>"
+            + _ID_TOKEN
+            + r"(?:、"
+            + _ID_TOKEN
+            + r")*|若干编号) 不在本次检索到的条款中[^\n]*$"
+        ),
+        "var",
+    ),
 )
+
+
+def _risk_line_ok(line: str) -> bool:
+    """「风险标签：⚠️ 数据加密、访问控制」——每个标签都必须在闭集里。"""
+    prefix = "风险标签：⚠️ "
+    if not line.startswith(prefix):
+        return False
+    parts = line[len(prefix):].split("、")
+    return all(part in _RISK_LABEL_WORDS for part in parts)
+
+
+def _server_line_ok(line: str) -> bool:
+    """这一行是否真的是服务端自己写的（按模板校验，不是按前缀放行）。"""
+    if _risk_line_ok(line):
+        return True
+    for pattern, group in _SERVER_LINE_SPECS:
+        match = pattern.match(line)
+        if not match:
+            continue
+        if group is None:
+            return True
+        return not _LEVEL_BAN.search(match.group(group) or "")
+    return False
 
 
 def _norm_line(text: object) -> str:
@@ -252,6 +310,7 @@ def _server_constant_lines() -> set[str]:
         prompt.NO_RESULT_ANSWER,
         scope.clarify_notice(),
         guard.ensure_disclaimer("x"),
+        guard.LEVEL_CONCLUSION_NOTICE,
     ]
     lines: set[str] = set()
     for text in texts:
@@ -289,7 +348,7 @@ def unaccounted_lines(text: str, clauses: list[dict] | None) -> list[str]:
         line = _norm_line(raw)
         if not line or line in allowed:
             continue
-        if line.startswith(SERVER_LINE_PREFIXES):
+        if _server_line_ok(line):
             continue
         if line in heads:
             continue
