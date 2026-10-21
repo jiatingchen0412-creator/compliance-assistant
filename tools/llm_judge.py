@@ -288,13 +288,30 @@ def verify_unsupported_facts(facts: list[str], citations: list[dict]) -> dict:
 # 而「答案里出现的数字在条款原文里找不到」这件事根本不需要模型判断。
 # 结论：能确定性判定的，不要交给模型。
 _ID_IN_ANSWER_RE = re.compile(
-    r"\b\d+(?:\.\d+){1,4}\b|[A-Z]{2}\.[A-Z]{2}-\d{2}|A\d{2}:\d{4}(?:-(?:CWE-\d+|\d+))?"
+    # 条款编号至少三段（8.1.4.1 / 8.1.4.99），两段的不算——「等保2.0」「NIST CSF 2.0」
+    # 会被两段的正则误当成编号（实测踩过）。
+    r"\b\d+(?:\.\d+){2,}\b|[A-Z]{2}\.[A-Z]{2}-\d{2}|A\d{2}:\d{4}(?:-(?:CWE-\d+|\d+))?"
 )
-# 数字 + 中文数量词（「七次覆写」「两 条」）。单字前不能是另一个数词，避免把「十一」拆开。
+# 数字 + 中文数量词（「七次覆写」「两 条」）。单字前不能是另一个数词，避免把「十一」拆开；
+# 数字前不能紧邻字母，否则 `MD5`、`SHA256`、`TLS1.2` 会被当成「编号里的数字」（实测踩过）。
 _NUMBER_RE = re.compile(
-    r"[0-9]+(?:\.[0-9]+)?|(?<![一二三四五六七八九十])[一二三四五六七八九十两]+(?=年|天|日|小时|分钟|周|月|次|倍|项|条)"
+    r"(?<![A-Za-z])[0-9]+(?:\.[0-9]+)?|(?<![一二三四五六七八九十])[一二三四五六七八九十两]+(?=年|天|日|小时|分钟|周|月|次|倍|项|条)"
 )
 _HEADER_LINE_RE = re.compile(r"^\s*\*\*[^*]+\*\*\s*$")
+# 服务端自己写的行（开场白、库外法规说明、概述、免责收尾、追问提示）。
+# 这些行的数字来自「等保2.0（GB/T 22239-2019）」「OWASP Top 10 2021」这类**标准名**，
+# 本来就不该出现在条款正文里——把它们算成编造，就是拿标准编号冤枉答案。
+# 真实答案里实测踩过：4/25 条被误判，全部由这几类行引起。
+_SERVER_LINE_HINTS = (
+    "⚠️",
+    "本工具目前只收录",
+    "本次相关条款集中在",
+    "以上条款是否适用于",
+    "本回答仅用于辅助自查",
+    "已由服务端删除",
+    "请查阅官方发布文本",
+    "知识库里与之相关的条款是",
+)
 
 
 def _kb_clause_ids() -> set[str]:
@@ -302,6 +319,43 @@ def _kb_clause_ids() -> set[str]:
         return {str(r["clause_id"]) for r in db.query("SELECT clause_id FROM clauses")}
     except Exception:
         return set()
+
+
+def _rendered_clause_ids(answer: str) -> list[str]:
+    """答案正文里实际渲染出来的条款编号（`**8.1.4.1 标题**` 这种行）。"""
+    out: list[str] = []
+    for line in str(answer or "").split("\n"):
+        m = _HEADER_LINE_RE.match(line)
+        if not m:
+            continue
+        head = line.strip().strip("*").strip()
+        cid = head.split(" ", 1)[0].strip()
+        if cid and cid not in out:
+            out.append(cid)
+    return out
+
+
+def citations_from_answer(answer: str, citations: list[dict]) -> list[dict]:
+    """把「正文里真正引用了的条款」补齐进 citations。
+
+    为什么需要：`/api/chat` 返回的 citations 只包含**模型点名的**那几条，
+    而正文渲染的是本次检索到的全部条款（实测一条答案正文里有 6 个条款块，
+    citations 只有 2 条）。judge 若只拿 2 条去比对，另外 4 条里的数字全成了
+    「条款里找不到」——那是拿错了比对基准，不是答案编造。
+    """
+    have = {str(c.get("clause_id") or "") for c in citations}
+    extra: list[dict] = []
+    for cid in _rendered_clause_ids(answer):
+        if cid in have:
+            continue
+        try:
+            row = db.query_one("SELECT * FROM clauses WHERE clause_id = ?", (cid,))
+        except Exception:
+            row = None
+        if row:
+            extra.append(db.clause_to_dict(row))
+            have.add(cid)
+    return [*citations, *extra]
 
 
 def deterministic_claims(
@@ -315,12 +369,16 @@ def deterministic_claims(
       1. 数字类：答案正文里的数字（时限、价格、次数、编号数字），在引用条款正文里找不到；
       2. 编号类：答案里提到的条款编号，知识库里根本不存在。
 
-    只扫「正文行」：以 `**条款号 标题**` 开头的行是工具自己拼的标题，跳过。
+    只扫「正文行」：以 `**条款号 标题**` 开头的行是工具自己拼的标题，跳过；
+    服务端自己写的行（开场白 / 库外法规说明 / 概述 / 免责收尾）也跳过——
+    那几行的数字来自标准编号（`GB/T 22239-2019`），不是模型编的。
     编号会在扫描前剔除，否则标题里的 `8.1.4.1` 会被当成「条款里没有的数字」。
     """
     body_lines = [
         ln for ln in str(answer or "").split("\n")
-        if not _HEADER_LINE_RE.match(ln)
+        if ln.strip()
+        and not _HEADER_LINE_RE.match(ln)
+        and not any(h in ln for h in _SERVER_LINE_HINTS)
     ]
     body = "\n".join(body_lines)
     mentioned_ids = _ID_IN_ANSWER_RE.findall(body)
@@ -378,16 +436,24 @@ def judge_answer(question: str, answer: str, citations: list[dict]) -> dict:
         facts = [str(x).strip()[:200] for x in raw_facts if str(x).strip()][:8]
     # O6：judge 说「条款里没有这条事实」，工具拿未截断的全文自己再查一遍。
     check = verify_unsupported_facts(facts, citations)
+    # 只有回查仍然「查不到」的才算数。judge 常把两样东西报成「无依据」：
+    #   ① 服务端自己写的行（风险标签 / 免责收尾 / 引用核对说明）—— 实测 12 条里 3 条是这种；
+    #   ② 条款正文里明明有、只是提示词里被截断或它没细看 —— 实测 9 条是这种。
+    confirmed = [
+        f for f in (check.get("unsupported") or [])
+        if not any(h in f for h in _SERVER_LINE_HINTS)
+    ]
     # 确定性判据：数字与编号不需要模型判断，直接查。
     det = deterministic_claims(answer, citations, _kb_clause_ids())
-    # 模型判的、或确定性判据查出来的，任一成立即算幻觉。
-    hallucinated = bool(facts) or scores["no_fabrication"] <= 2 or det["flagged"]
+    # 模型判的（且经回查确认）、或确定性判据查出来的，任一成立即算幻觉。
+    hallucinated = bool(confirmed) or scores["no_fabrication"] <= 2 or det["flagged"]
     return {
         **scores,
         "unsupported_facts": facts,
         "facts_check": check,
+        "confirmed_facts": confirmed,
         "deterministic": det,
-        "model_flagged": bool(facts) or scores["no_fabrication"] <= 2,
+        "model_flagged": bool(confirmed) or scores["no_fabrication"] <= 2,
         "reason": str(data.get("reason") or "")[:160],
         "hallucinated": hallucinated,
     }
@@ -403,6 +469,8 @@ def _judge_rows(questions: list[dict], answer_fn, judge_fn, quiet: bool) -> list
         try:
             result = answer_fn(question)
             citations = result.get("citations") or []
+            # 比对基准必须等于正文里真正引用的条款，见 citations_from_answer() 的说明。
+            citations = citations_from_answer(result.get("answer", ""), citations)
             row.update({
                 "mode": result.get("mode", ""),
                 "found": bool(result.get("found")),
@@ -917,7 +985,11 @@ def run_probe(
                 "answer": item.get("answer", ""),
                 "citation_ids": item.get("clause_ids") or [],
             }
-            verdict = judge_fn(row["question"], row["answer"], cites.get(qid) or [])
+            verdict = judge_fn(
+                row["question"],
+                row["answer"],
+                citations_from_answer(row["answer"], cites.get(qid) or []),
+            )
             if verdict.get("error"):
                 row["error"] = verdict["error"]
             else:
