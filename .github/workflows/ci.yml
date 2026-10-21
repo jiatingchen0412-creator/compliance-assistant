@@ -118,6 +118,13 @@ jobs:
         # 它同时是"过滤掉了也不能让答案少东西"的守卫，所以放在等级矩阵之后。
         run: python tests/test_answer_render.py
 
+      - name: 组装一致性（逐行穷举）
+        # 上面那一套是"举例子"：若干条已知的模型话术进不了正文。
+        # 这一套是"穷举"：把答案按行拆开，每一行都必须能追到知识库字段或服务端常量，
+        # 追不到就红，并打印那一行。结构性改造（模型不写正文）从此由 CI 逐行守住，
+        # 而不是靠谁记得多写两条用例。
+        run: python tests/test_answer_assembly.py
+
       - name: 导入与撤销
         run: python tests/test_revert.py
 

@@ -138,9 +138,10 @@ rem 看今天的日志 / 汇总最近 7 天
 .venv\Scripts\python.exe tests\test_devlog.py        rem 开发日志读写（在临时目录里跑）
 .venv\Scripts\python.exe tests\test_level_denial.py rem 等级判定矩阵（240 句锚点组合 + 回答侧 18 条句式，不需要 Ollama）
 .venv\Scripts\python.exe tests\test_answer_render.py rem 服务端答案拼装与概述过滤（模型不再写正文，概述命中判定/等级就整条丢）
+.venv\Scripts\python.exe tests\test_answer_assembly.py rem 组装一致性（逐行穷举：答案每一行都要能追到知识库或服务端常量）
 ```
 
-上面这段是**全部要跑的**：15 个自动化套件（其中 12 个逐条计数，共 196 条用例）加 dev 集 78 题、留出集 37 题的评测，**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
+上面这段是**全部要跑的**：16 个自动化套件（其中 13 个逐条计数，共 214 条用例）加 dev 集 78 题、留出集 37 题的评测，**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
 
 > **为什么另有一套「留出集」**：上面那 78 题（dev 集）既是唯一的评测依据，又是当初调阈值、
 > 调权重、加口语词表时**照着调**的那一套。它全绿只能说明"能通过这一套题"，

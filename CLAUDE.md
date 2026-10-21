@@ -124,7 +124,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（15 个套件；其中 12 个逐条计数，共 196 条用例）
+# 跑全部测试（16 个套件；其中 13 个逐条计数，共 214 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
 .venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（78 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
@@ -141,6 +141,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 .venv\Scripts\python.exe tests\test_devlog.py        # 开发日志读写（临时目录）
 .venv\Scripts\python.exe tests\test_level_denial.py  # 等级判定矩阵（锚点闭集 + 回答侧兜底，不需要 Ollama）
 .venv\Scripts\python.exe tests\test_answer_render.py # 服务端答案拼装与概述过滤（模型不再写正文）
+.venv\Scripts\python.exe tests\test_answer_assembly.py # 组装一致性（逐行穷举，模型文本进正文就红）
 
 # 起服务 / 健康检查
 .venv\Scripts\python.exe -m app.main

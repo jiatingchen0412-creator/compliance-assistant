@@ -150,3 +150,93 @@ def render(
 
     parts.append(CLOSING)
     return "\n\n".join(p for p in parts if p)
+
+
+# --------------------------------------------------------------------------
+# 组装一致性检查：把「模型不写正文」从举例验证变成逐行穷举
+# --------------------------------------------------------------------------
+# 上面这一整条链的承诺是：**用户读到的每一个字，要么来自知识库字段，要么来自
+# 服务端常量**。在 t28 之前这只是设计意图，靠 `test_answer_render.py` 的若干条
+# 用例举例验证；而 t29/t30 两次红队都证明「举例」挡不住新写法。
+#
+# 所以这里给一个**逐行穷举**的判据：把答案按行拆开，要求每一行都能追到
+# 知识库（条款编号/标题/正文/概述）或服务端（开场/收尾/风险标签/各类声明），
+# 追不到就返回那一行。调用方（单测、评审工具）只要断言返回值为空即可。
+#
+# 这个函数**不在生产请求路径上**——它不产生用户可见的内容，只用于验证。
+# 特意放在本模块而不是测试里，是因为它必须与 `render()` 共用同一套常量，
+# 否则两边一漂移，检查就会失效。
+
+# 服务端声明的**前缀**白名单。这些行由服务端生成，但内容里带变量
+# （编号、条数、法规名、字数），无法整句比对，只能按前缀认。
+# 新增一种声明而忘了登记 → 检查会变红，这是故意的。
+SERVER_LINE_PREFIXES = (
+    "⚠️ 说明：",              # 清单外法规名，名称已隐去（chat.py 拼在最前面）
+    "⚠️ 引用核对：",           # 模型给了对不上的编号，只回显编号形状
+    "⚠️ 模型这次试图",          # 模型试图下等级结论，已丢弃并降级
+    "⚠️ 您说的情况还比较笼统",   # scope.clarify_notice()
+    "风险标签：",              # _risk_line()
+    "（以下内容不是知识库依据",  # guard.annotate_unverified_clause_claims()
+)
+
+
+def _norm_line(text: object) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _server_constant_lines() -> set[str]:
+    """服务端常量能整句比对的那些行（开场、收尾、无结果、追问提示、免责兜底）。"""
+    from . import guard, scope  # 延迟导入：避免与 scope -> answer 的潜在循环
+
+    texts = [
+        *OPENERS.values(),
+        DEFAULT_OPENER,
+        CLOSING,
+        prompt.NO_RESULT_ANSWER,
+        scope.clarify_notice(),
+        guard.ensure_disclaimer("x"),
+    ]
+    lines: set[str] = set()
+    for text in texts:
+        for raw in str(text).split("\n"):
+            line = _norm_line(raw)
+            if line:
+                lines.add(line)
+    return lines
+
+
+def unaccounted_lines(text: str, clauses: list[dict] | None) -> list[str]:
+    """返回答案里既不是知识库字段、也不是服务端常量的行。
+
+    空列表 = 组装一致性成立。
+    """
+    allowed = _server_constant_lines()
+
+    topic = _norm_line(topic_line(clauses or []))
+    if topic:
+        allowed.add(topic)
+
+    heads: set[str] = set()
+    bodies: list[str] = []
+    for clause in clauses or []:
+        cid = str(clause.get("clause_id") or "").strip()
+        title = str(clause.get("title") or "").strip()
+        if cid or title:
+            heads.add(_norm_line(f"**{cid} {title}**"))
+        body = _norm_line(_clause_body(clause)).rstrip("…")
+        if body:
+            bodies.append(body)
+
+    bad: list[str] = []
+    for raw in str(text or "").split("\n"):
+        line = _norm_line(raw)
+        if not line or line in allowed:
+            continue
+        if line.startswith(SERVER_LINE_PREFIXES):
+            continue
+        if line in heads:
+            continue
+        if any(body.startswith(line.rstrip("…")) for body in bodies):
+            continue
+        bad.append(line)
+    return bad
