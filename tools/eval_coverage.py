@@ -1,28 +1,37 @@
-"""评测覆盖度分析：dev 集考了哪些条款、还漏了哪些。
+"""评测覆盖度分析：dev 集**真实检索到**了哪些条款、还漏了哪些。
 
-用途：**给留出集选题**。留出集（`tests/eval_holdout.json`）的条款必须尽量取自
-dev 集（`tests/eval_questions.json`）从未引用过的那一批，否则考的还是同一批
-知识点，防不住过拟合。这个脚本把"从未引用过"算清楚，省得靠人肉记。
+用途：给评测集选题、也给「我们到底覆盖了多少知识库」一个可信数字。
 
-用法（在项目根目录执行）：
+## 为什么要真实检索一遍
+
+早期版本用「dev 集的 `must_include_any` 模式去匹配条款编号」来算覆盖
+（`cid.startswith(p) or p in cid`），报出来是 231/283。覆盖度审计指出这是虚高：
+真实检索只有 209/283。两个原因：
+
+1. `must_include_any` 是 **any-of**——题里写两条，系统只要命中一条就算通过，
+   宁可漏考也不误判，但覆盖统计会把两条都记成"已考"。
+2. 宽前缀（`8.1.5`）会把 `8.1.5.1`~`8.1.5.4` 全算成已覆盖，哪怕系统从没取到过它们。
+
+标本：`8.1.4.18` 被模式覆盖判为"已覆盖"，但没有任何一道题真把它检索出来过。
+
+所以现在的口径是：**对每道 dev 题真的跑一次 `search()`，把它 top_k 里的条款
+编号并起来**。这才是"系统实际考过哪些条款"。模式口径仍保留一列做对照，
+两者的差值就是虚高量。
+
+## 用法
+
     .venv\\Scripts\\python.exe tools\\eval_coverage.py
 
 产出（都在 data/ 下，属生成物、不进版本库）：
-    data/_coverage.txt   分组汇总：未覆盖条款按「标准 > 一级章节」归堆，并统计风险标签
-    data/_uncovered.txt  未覆盖条款全量明细（编号 / 标题 / 风险标签 / 正文前 150 字），
-                         写留出集时对着它挑题目
+    data/_coverage.txt   分组汇总 + 两种口径的差值 + 虚高明细
+    data/_uncovered.txt  未覆盖条款全量明细（编号 / 标题 / 风险标签 / 正文前 150 字）
 
-判据说明：匹配用的是 `app/quality.py` 里 `clause_matches` 的同一套规则
-（`cid.startswith(p) or p in cid`），所以 dev 集里写一个宽模式（比如 `8.1.5`）
-会把 `8.1.5.1`、`8.1.5.2` 一起算成"已覆盖"。这既是它的优点（按**系统的实际判分
-口径**算覆盖），也是它的局限（宽模式会高估覆盖度）。
+## 一条实测教训
 
-**一条实测教训**：「未覆盖的条款」不等于「未覆盖的考点」。初次给留出集选题时，
-有两道题期望的是 NIST 的 `ID.RA-07`（变更管理）和 `DE.CM-01`（网络监测），
-结果系统检索到的是等保 `8.1.5.2` 与 `8.2.5.20`——**正文完整回答了问题**
-（前者写着"重要操作须经审批并经审计记录…变更不走流程"，后者写着"没有告警通知，
-服务挂了靠客户投诉才知道"）。所以选题之后必须逐题看检索结果是不是"另一个正确
-答案"，是的话就换题，不能算系统答错。
+「未覆盖的条款」不等于「未覆盖的考点」。给留出集选题时有两道题期望 NIST 的
+`ID.RA-07`（变更管理）和 `DE.CM-01`（网络监测），系统检索到的却是等保 `8.1.5.2`
+与 `8.2.5.20`——**正文完整回答了问题**。所以选题后必须逐题看检索结果是不是
+"另一个正确答案"，是的话换题，不能算系统答错。
 """
 from __future__ import annotations
 
@@ -35,9 +44,12 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import app.console  # noqa: F401  修正控制台编码
 
+from app import config  # noqa: E402
+
 SEED = ROOT / "data" / "seed"
 OUT = ROOT / "data" / "_coverage.txt"
 DETAIL = ROOT / "data" / "_uncovered.txt"
+TOP_K = config.RETRIEVAL_TOP_K
 
 lines: list[str] = []
 
@@ -46,17 +58,38 @@ def w(s: str = "") -> None:
     lines.append(s)
 
 
-# ---------- 1. dev 集引用了哪些条款编号 ----------
+# ---------- 1. dev 集：模式口径 vs 真实检索口径 ----------
 qs = json.loads((ROOT / "tests" / "eval_questions.json").read_text(encoding="utf-8"))["questions"]
+
 patterns: set[str] = set()
 for q in qs:
     for p in q.get("must_include_any") or []:
         patterns.add(p)
 
+
+def pattern_covered(cid: str) -> bool:
+    """旧口径：dev 集的模式命中即算覆盖。"""
+    return any(cid.startswith(p) or p in cid for p in patterns)
+
+
+from app.retrieval import get_engine  # noqa: E402  延迟导入：会初始化 fastembed
+
+engine = get_engine()
+engine.warmup()
+
+retrieved: set[str] = set()
+per_question: dict[str, list[str]] = {}
+for q in qs:
+    got = engine.search(q["question"], top_k=TOP_K)
+    ids = [str(r.get("clause_id", "")) for r in got.get("results") or []]
+    per_question[q["id"]] = ids
+    retrieved.update(i for i in ids if i)
+
 w("=" * 78)
-w("现有 dev 集（44 题）引用的条款编号模式")
+w(f"dev 集（{len(qs)} 题）覆盖度：两种口径对照")
 w("=" * 78)
-w(f"共 {len(patterns)} 个模式：{', '.join(sorted(patterns))}")
+w(f"模式口径：{len(patterns)} 个模式，取自 must_include_any")
+w(f"真实检索：每题 top_k={TOP_K}，共取到 {len(retrieved)} 个不同条款编号")
 w()
 
 # ---------- 2. 种子库全部条款 ----------
@@ -90,23 +123,33 @@ for name, n in by_std.items():
 w(f"  合计: {len(all_clauses)} 条")
 w()
 
+hit_real = [c for c in all_clauses if c["clause_id"] in retrieved]
+miss_real = [c for c in all_clauses if c["clause_id"] not in retrieved]
+hit_pat = [c for c in all_clauses if pattern_covered(c["clause_id"])]
 
-def covered(cid: str) -> bool:
-    return any(cid.startswith(p) or p in cid for p in patterns)
-
-
-hit = [c for c in all_clauses if covered(c["clause_id"])]
-miss = [c for c in all_clauses if not covered(c["clause_id"])]
-w(f"dev 集已覆盖条款: {len(hit)} 条")
-w(f"dev 集**未覆盖**条款: {len(miss)} 条  ← 留出测试集从这里选题")
+w(f"模式口径已覆盖：{len(hit_pat)} 条")
+w(f"真实检索已覆盖：{len(hit_real)} 条")
+w(f"真实检索**未覆盖**：{len(miss_real)} 条   ← 选题从这里挑")
+if len(hit_pat) > len(hit_real):
+    w(f"⚠️ 模式口径虚高：{len(hit_pat) - len(hit_real)} 条（模式说考过、检索其实没取到）")
 w()
 
-# ---------- 3. 未覆盖条款按章节分组（找成体系的考点） ----------
+# ---------- 3. 虚高明细（模式说已覆盖、真实没取到） ----------
+fake = [c for c in hit_pat if c["clause_id"] not in retrieved]
+if fake:
+    w("=" * 78)
+    w("⚠️ 虚高明细：模式口径判为已覆盖、真实检索从未取到")
+    w("=" * 78)
+    for c in sorted(fake, key=lambda x: (x["std_name"], x["clause_id"])):
+        w(f"  {c['clause_id']:<18} {c['std_name']:<16} {c['title'][:34]}")
+    w()
+
+# ---------- 4. 未覆盖条款按章节分组 ----------
 w("=" * 78)
 w("未覆盖条款 · 按「标准 > 一级章节」分组（取条数 ≥3 的组）")
 w("=" * 78)
 groups: dict[tuple[str, str], list[dict]] = defaultdict(list)
-for c in miss:
+for c in miss_real:
     l1 = (c["chapter_path"] or ["(无章节)"])[0]
     groups[(c["std_name"], l1)].append(c)
 
@@ -120,20 +163,22 @@ for (std, l1), items in sorted(groups.items(), key=lambda kv: -len(kv[1])):
     if len(items) > 14:
         w(f"    … 另有 {len(items) - 14} 条")
 
-# ---------- 4. 高风险标签在未覆盖条款里的分布 ----------
+# ---------- 5. 高风险标签在未覆盖条款里的分布 ----------
 w()
 w("=" * 78)
 w("未覆盖条款 · 按风险标签统计（测试集要优先补这些考点）")
 w("=" * 78)
-tag_counter = Counter(t for c in miss for t in c["risk_tags"])
+tag_counter = Counter(t for c in miss_real for t in c["risk_tags"])
 for t, n in tag_counter.most_common():
-    w(f"  {t:<20} {n} 条")
+    mark = "  ← 高风险" if t in config.HIGH_RISK_TAGS else ""
+    w(f"  {t:<20} {n} 条{mark}")
 
-# ---------- 5. 未覆盖条款全量明细（写题用） ----------
+# ---------- 6. 未覆盖条款全量明细（写题用） ----------
 detail: list[str] = []
-detail.append("未覆盖条款全量明细（id | 标题 | 风险标签 | 正文前 110 字）")
+detail.append("未覆盖条款全量明细（id | 标准 | 风险标签 | 标题 | 正文前 150 字）")
+detail.append("口径：对每道 dev 题真实跑一次 search()，top_k 里没出现过的条款")
 detail.append("=" * 78)
-for c in sorted(miss, key=lambda x: (x["std_name"], x["clause_id"])):
+for c in sorted(miss_real, key=lambda x: (x["std_name"], x["clause_id"])):
     text = (c.get("_text") or "").replace("\n", " ")
     detail.append(
         f"{c['clause_id']:<18} {c['std_name']:<16} {'/'.join(c['risk_tags']) or '-':<28} "
@@ -143,5 +188,6 @@ for c in sorted(miss, key=lambda x: (x["std_name"], x["clause_id"])):
 
 OUT.write_text("\n".join(lines), encoding="utf-8")
 DETAIL.write_text("\n".join(detail), encoding="utf-8")
+print(f"真实检索覆盖 {len(hit_real)}/{len(all_clauses)} 条，未覆盖 {len(miss_real)} 条")
 print(f"written: {OUT}  ({len(lines)} lines)")
 print(f"written: {DETAIL}  ({len(detail)} lines)")

@@ -31,7 +31,7 @@
     "改完留出集要同步改文件里的 _字段 说明和本题库的 note，否则后人不知道这题在测什么。"
   ],
   "_说明": "tests/eval_holdout.json（留出集）与 tests/eval_questions.json（dev 集）的指纹、逐题基准和检索配置快照。由 tests/test_eval_discipline.py --update-lock / --raise-baseline 生成，不要手改。",
-  "dev_sha256": "d46de3b76ffeeb5f8c4d05bc950bd030b4edc9287ce545b73c34cea8625ed9a9",
+  "dev_sha256": "280556790ea434117a81aaa33fbd14ce6a4e7913f81c5794a6e87ba95665b9d3",
   "config": {
     "min_score": 0.4,
     "keyword_weight": 0.5,
