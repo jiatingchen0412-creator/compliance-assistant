@@ -63,19 +63,27 @@ async function refreshHealth() {
   try {
     const h = await API.get('/api/health');
     const llm = h.llm || {};
+    const cloud = !!llm.cloud;
     if (llm.status === 'ok') {
-      chip.textContent = `本地模型已就绪 · ${llm.model}`;
+      chip.textContent = `${cloud ? '云端模型' : '本地模型'}已就绪 · ${llm.model}`;
       chip.className = 'status-chip ok';
-      chip.title = `Ollama ${llm.base_url} · 模型 ${llm.model}`;
+      chip.title = cloud
+        ? `云端接口 ${llm.base_url} · 模型 ${llm.model}（问题会发送到该服务商）`
+        : `Ollama ${llm.base_url} · 模型 ${llm.model}`;
+    } else if (llm.status === 'cloud_not_configured') {
+      chip.textContent = '云端模型未配置（当前仅能检索条款）';
+      chip.className = 'status-chip warn';
+      chip.title = llm.hint || '';
     } else if (llm.status === 'model_missing') {
       chip.textContent = '缺少大模型（当前仅能检索条款）';
       chip.className = 'status-chip warn';
       chip.title = llm.hint || '';
     } else {
-      chip.textContent = 'Ollama 未运行（当前仅能检索条款）';
+      chip.textContent = cloud ? '云端模型不可用（当前仅能检索条款）' : 'Ollama 未运行（当前仅能检索条款）';
       chip.className = 'status-chip warn';
       chip.title = llm.hint || '';
     }
+    API.renderPrivacyNotice(h);
     const vec = h.vector_search ? '语义检索已启用' : '语义检索未启用（仅关键词）';
     hintRight.textContent = `${vec} · 知识库 ${h.config ? h.config.retrieval_top_k : ''} 条/次`;
     if (llm.hint) console.warn('[环境提示]', llm.hint);

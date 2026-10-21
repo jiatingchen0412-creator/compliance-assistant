@@ -425,13 +425,16 @@ async function initKb() {
   // 状态栏
   try {
     const h = await API.get('/api/health');
+    const cloud = !!(h.llm && h.llm.cloud);
     if (h.llm && h.llm.status === 'ok') {
-      document.getElementById('statusChip').textContent = `本地模型已就绪 · ${h.llm.model}`;
+      document.getElementById('statusChip').textContent =
+        `${cloud ? '云端模型' : '本地模型'}已就绪 · ${h.llm.model}`;
       document.getElementById('statusChip').className = 'status-chip ok';
     } else {
       document.getElementById('statusChip').textContent = '大模型未就绪（检索功能不受影响）';
       document.getElementById('statusChip').className = 'status-chip warn';
     }
+    API.renderPrivacyNotice(h);
   } catch (e) {
     // 以前这里是 /* 忽略 */：健康检查挂了胶囊就永远停在"加载中…"，
     // 看起来像界面卡死。降级信息必须让人看得见（CLAUDE.md：别静默降级）。

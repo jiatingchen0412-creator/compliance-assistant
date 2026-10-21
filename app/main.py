@@ -68,7 +68,12 @@ def _bootstrap() -> None:
         if result.get("skipped"):
             STARTUP_STATE.update({"detail": result.get("reason", "")})
 
-        STARTUP_STATE.update({"phase": "ollama", "message": "正在检查本地大模型服务…"})
+        if llm.is_cloud():
+            STARTUP_STATE.update(
+                {"phase": "llm", "message": f"正在检查云端大模型（{llm.active_model()}）…"}
+            )
+        else:
+            STARTUP_STATE.update({"phase": "ollama", "message": "正在检查本地大模型服务…"})
         if not llm.is_running():
             llm.try_start_server(wait_seconds=20)
 

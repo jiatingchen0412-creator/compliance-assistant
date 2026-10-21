@@ -39,6 +39,43 @@ class LLMUnavailable(RuntimeError):
         self.hint = hint
 
 
+def backend() -> str:
+    """当前用哪个后端：`ollama`（本地，默认）或 `openai`（OpenAI 兼容的云端接口）。"""
+    return config.LLM_BACKEND
+
+
+def is_cloud() -> bool:
+    return backend() == "openai"
+
+
+def active_model() -> str:
+    """当前后端实际用的模型名（日志、健康状态、页面上都显示这个）。"""
+    return config.LLM_API_MODEL if is_cloud() else config.LLM_MODEL
+
+
+def cloud_configured() -> bool:
+    """云端后端配好了没有：地址与密钥都得有，缺一个就当没配好。"""
+    return bool(config.LLM_API_BASE and config.LLM_API_KEY)
+
+
+def _cloud_client(timeout: int | None = None) -> httpx.Client:
+    """OpenAI 兼容接口的客户端。
+
+    trust_env 默认 false（与本地 Ollama 同样的理由：Windows 上系统代理会把
+    请求劫走并返回 502）。需要走代理才能出网的用户可以把 LLM_API_TRUST_ENV
+    设成 true —— 这一项在 .env.example 里有说明。
+    """
+    return httpx.Client(
+        base_url=config.LLM_API_BASE,
+        timeout=httpx.Timeout(timeout or config.LLM_TIMEOUT, connect=10.0),
+        trust_env=config.LLM_API_TRUST_ENV,
+        headers={
+            "Authorization": f"Bearer {config.LLM_API_KEY}",
+            "Content-Type": "application/json",
+        },
+    )
+
+
 def _client(timeout: int | None = None) -> httpx.Client:
     """本地 Ollama 客户端。
 
@@ -57,6 +94,13 @@ def _client(timeout: int | None = None) -> httpx.Client:
 
 
 def is_running() -> bool:
+    """当前后端能不能用。
+
+    云端后端不发探测请求（启动时多一次外网往返既慢又可能被限流）：
+    配了密钥就算"可用"，真正的错误在第一次调用时按状态码报出来。
+    """
+    if is_cloud():
+        return cloud_configured()
     try:
         with _client(timeout=4) as c:
             return c.get("/api/tags").status_code == 200
@@ -65,6 +109,9 @@ def is_running() -> bool:
 
 
 def list_models() -> list[str]:
+    if is_cloud():
+        # 云端模型清单不给用户看（不同服务商命名规则差太多），只报当前配置的那个
+        return [config.LLM_API_MODEL] if cloud_configured() else []
     try:
         with _client(timeout=8) as c:
             data = c.get("/api/tags").json()
@@ -82,7 +129,12 @@ def _ollama_exe() -> str | None:
 
 
 def try_start_server(wait_seconds: int = 25) -> bool:
-    """尝试后台拉起 Ollama 服务（用户没手动开的时候兜底）。"""
+    """尝试后台拉起 Ollama 服务（用户没手动开的时候兜底）。
+
+    云端后端没有"服务"要拉，已配置就直接返回 True。
+    """
+    if is_cloud():
+        return cloud_configured()
     if is_running():
         return True
     exe = _ollama_exe()
@@ -109,7 +161,39 @@ def try_start_server(wait_seconds: int = 25) -> bool:
 
 
 def health() -> dict:
-    """给前端和启动自检用的健康状态。"""
+    """给前端和启动自检用的健康状态。两种后端返回同一套字段。"""
+    if is_cloud():
+        if not cloud_configured():
+            status, hint = (
+                "cloud_not_configured",
+                "LLM_BACKEND=openai，但 LLM_API_BASE 或 LLM_API_KEY 还没填。"
+                "请在 .env 里补上，或把 LLM_BACKEND 改回 ollama 用本地模型。",
+            )
+            running = False
+        else:
+            running = True
+            status, hint = "ok", ""
+        return {
+            "backend": "openai",
+            "cloud": True,
+            "base_url": config.LLM_API_BASE,
+            "running": running,
+            "models": [config.LLM_API_MODEL] if running else [],
+            "model": config.LLM_API_MODEL,
+            "model_ready": running,
+            "status": status,
+            "hint": hint,
+            # 隐私边界变了，前端要常驻提示。措辞与 docs/08 保持一致。
+            "privacy_notice": (
+                "当前使用云端大模型（"
+                + config.LLM_API_MODEL
+                + "），您描述的系统和问题会发送到该服务商。"
+                "如需数据完全不出本机，请把 .env 里的 LLM_BACKEND 改回 ollama。"
+            )
+            if running
+            else "",
+        }
+
     running = is_running()
     models = list_models() if running else []
     model_ready = any(
@@ -124,6 +208,7 @@ def health() -> dict:
         status, hint = "ok", ""
     return {
         "backend": "ollama",
+        "cloud": False,
         "base_url": config.OLLAMA_BASE_URL,
         "running": running,
         "models": models,
@@ -131,13 +216,63 @@ def health() -> dict:
         "model_ready": model_ready,
         "status": status,
         "hint": hint,
+        "privacy_notice": "",
     }
+
+
+# --------------------------------------------------------------------------
+# 云端（OpenAI 兼容）报错翻译
+# --------------------------------------------------------------------------
+def _cloud_error(resp: httpx.Response) -> LLMUnavailable:
+    """把 HTTP 状态码翻译成用户能动手解决的话。"""
+    code = resp.status_code
+    body = (resp.text or "")[:300]
+    if code in (401, 403):
+        return LLMUnavailable(
+            f"云端接口拒绝访问（{code}）：API Key 无效、过期或没有该模型的权限",
+            "检查 .env 里的 LLM_API_KEY 是否复制完整、是否已过期，以及账号是否开通了该模型。",
+        )
+    if code == 404:
+        return LLMUnavailable(
+            f"云端接口找不到模型 {config.LLM_API_MODEL}（404）",
+            "检查 .env 里的 LLM_API_MODEL 是否是该服务商的准确模型名；"
+            "LLM_API_BASE 通常要以 /v1 结尾。",
+        )
+    if code == 429:
+        return LLMUnavailable(
+            "云端接口限流或余额不足（429）",
+            "稍等再试，或检查账号余额与并发限制；也可以在 .env 里换一个模型。",
+        )
+    return LLMUnavailable(f"云端接口返回错误 {code}：{body}")
 
 
 # --------------------------------------------------------------------------
 # 生成
 # --------------------------------------------------------------------------
 def chat(
+    messages: list[dict],
+    *,
+    json_schema: dict | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    """一次性拿到完整回答（非流式）。按 LLM_BACKEND 分发。"""
+    if is_cloud():
+        return _cloud_chat(
+            messages,
+            json_schema=json_schema,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    return _ollama_chat(
+        messages,
+        json_schema=json_schema,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+
+def _ollama_chat(
     messages: list[dict],
     *,
     json_schema: dict | None = None,
@@ -184,6 +319,16 @@ def chat(
 
 
 def chat_stream(messages: list[dict], *, json_schema: dict | None = None) -> Iterator[str]:
+    """流式生成，逐段 yield 文本增量。按 LLM_BACKEND 分发。"""
+    if is_cloud():
+        yield from _cloud_chat_stream(messages, json_schema=json_schema)
+        return
+    yield from _ollama_chat_stream(messages, json_schema=json_schema)
+
+
+def _ollama_chat_stream(
+    messages: list[dict], *, json_schema: dict | None = None
+) -> Iterator[str]:
     """流式生成，逐段 yield 文本增量。"""
     payload: dict[str, Any] = {
         "model": config.LLM_MODEL,
@@ -229,6 +374,132 @@ def chat_stream(messages: list[dict], *, json_schema: dict | None = None) -> Ite
         raise LLMUnavailable(
             f"模型 {config.LLM_MODEL} 响应超时",
             "首次加载模型较慢，可稍后重试；或在 .env 里把 LLM_TIMEOUT 调大（如 300）。",
+        ) from exc
+
+
+# --------------------------------------------------------------------------
+# 云端（OpenAI 兼容）实现
+# --------------------------------------------------------------------------
+def _cloud_payload(
+    messages: list[dict],
+    *,
+    json_schema: dict | None,
+    temperature: float | None,
+    max_tokens: int | None,
+    stream: bool,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": config.LLM_API_MODEL,
+        "messages": messages,
+        "stream": stream,
+        "temperature": config.LLM_TEMPERATURE if temperature is None else temperature,
+        "max_tokens": max_tokens or config.LLM_MAX_TOKENS,
+    }
+    if json_schema is not None:
+        mode = config.LLM_API_JSON_MODE
+        if mode == "json_object":
+            payload["response_format"] = {"type": "json_object"}
+        elif mode == "json_schema":
+            payload["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "answer",
+                    "strict": False,
+                    "schema": json_schema,
+                },
+            }
+        # mode == "none"：不加约束，只能靠提示词。兼容性兜底，稳定性最差。
+    return payload
+
+
+def _cloud_connect_error(exc: Exception) -> LLMUnavailable:
+    return LLMUnavailable(
+        f"连不上云端接口 {config.LLM_API_BASE}",
+        "检查 .env 里的 LLM_API_BASE 是否写对（通常以 /v1 结尾）；"
+        "如果这台机器必须走代理才能出网，把 LLM_API_TRUST_ENV 设成 true 再试。",
+    )
+
+
+def _cloud_chat(
+    messages: list[dict],
+    *,
+    json_schema: dict | None = None,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> str:
+    payload = _cloud_payload(
+        messages,
+        json_schema=json_schema,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        stream=False,
+    )
+    try:
+        with _cloud_client() as c:
+            resp = c.post("/chat/completions", json=payload)
+    except httpx.ConnectError as exc:
+        raise _cloud_connect_error(exc) from exc
+    except httpx.ReadTimeout as exc:
+        raise LLMUnavailable(
+            f"云端模型 {config.LLM_API_MODEL} 响应超时",
+            "可以在 .env 里把 LLM_TIMEOUT 调大（如 300），或换一个更快的模型。",
+        ) from exc
+
+    if resp.status_code >= 400:
+        raise _cloud_error(resp)
+
+    data = resp.json()
+    choices = data.get("choices") or [{}]
+    message = choices[0].get("message") or {}
+    return str(message.get("content") or "")
+
+
+def _cloud_chat_stream(
+    messages: list[dict], *, json_schema: dict | None = None
+) -> Iterator[str]:
+    payload = _cloud_payload(
+        messages,
+        json_schema=json_schema,
+        temperature=None,
+        max_tokens=None,
+        stream=True,
+    )
+    try:
+        with _cloud_client() as c:
+            with c.stream("POST", "/chat/completions", json=payload) as resp:
+                if resp.status_code >= 400:
+                    resp.read()
+                    raise _cloud_error(resp)
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    if line.startswith("data:"):
+                        line = line[5:].strip()
+                    if not line or line == "[DONE]":
+                        if line == "[DONE]":
+                            break
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if chunk.get("error"):
+                        err = chunk["error"]
+                        raise LLMUnavailable(
+                            f"云端接口流式返回错误：{err.get('message') or err}"
+                        )
+                    choices = chunk.get("choices") or [{}]
+                    piece = (choices[0].get("delta") or {}).get("content") or ""
+                    if piece:
+                        yield piece
+                    if choices[0].get("finish_reason"):
+                        break
+    except httpx.ConnectError as exc:
+        raise _cloud_connect_error(exc) from exc
+    except httpx.ReadTimeout as exc:
+        raise LLMUnavailable(
+            f"云端模型 {config.LLM_API_MODEL} 响应超时",
+            "可以在 .env 里把 LLM_TIMEOUT 调大（如 300），或换一个更快的模型。",
         ) from exc
 
 

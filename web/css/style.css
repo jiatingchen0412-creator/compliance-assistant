@@ -1093,6 +1093,23 @@ a:hover { text-decoration: underline; }
   text-align: center;
 }
 
+/* 云端模型常驻提示：隐私边界变了，必须一直看得见（不是可关闭的广告条）。 */
+.cloud-note {
+  margin: var(--sp-3) var(--sp-5) 0;
+  padding: 10px var(--sp-4);
+  border: 1px solid var(--warn-border);
+  border-left: 3px solid var(--warn-border);
+  border-radius: var(--r-sm);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+
+.cloud-note[hidden] {
+  display: none;
+}
+
 /* ==========================================================================
    12. 检索质量警告条
    ========================================================================== */

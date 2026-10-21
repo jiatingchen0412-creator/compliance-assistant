@@ -105,6 +105,11 @@ jobs:
         # /api/health 的版本号来自同一处 config.APP_VERSION。
         run: python tests/test_quality_gate.py
 
+      - name: 大模型后端可切换（本地 / 云端）
+        # 不联网：HTTP 交互全用假客户端。钉住三件事——云端没配好不能假装可用、
+        # 配好必须给出隐私提示、API Key 不出现在任何返回值与异常里。
+        run: python tests/test_llm_provider.py
+
       - name: 等级判定矩阵（锚点闭集 + 回答侧兜底）
         # t20 新增这一套时只写进了本机命令清单，漏了 ci.yml——和 test_quality_gate.py
         # 当初漏掉是同一个病：不进 CI 的回归测试等于不存在。它用 llm_calls==0 打桩，

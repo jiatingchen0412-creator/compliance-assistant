@@ -139,9 +139,10 @@ rem 看今天的日志 / 汇总最近 7 天
 .venv\Scripts\python.exe tests\test_level_denial.py rem 等级判定矩阵（240 句锚点组合 + 回答侧 18 条句式，不需要 Ollama）
 .venv\Scripts\python.exe tests\test_answer_render.py rem 服务端答案拼装与概述过滤（模型不再写正文，概述命中判定/等级就整条丢）
 .venv\Scripts\python.exe tests\test_answer_assembly.py rem 组装一致性（逐行穷举：答案每一行都要能追到知识库或服务端常量）
+.venv\Scripts\python.exe tests\test_llm_provider.py    rem 大模型后端可切换（本地/云端；不联网，验证密钥不会泄露）
 ```
 
-上面这段是**全部要跑的**：16 个自动化套件（其中 13 个逐条计数，共 233 条用例）加 dev 集 93 题、留出集 43 题的评测，**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
+上面这段是**全部要跑的**：17 个自动化套件（其中 14 个逐条计数，共 244 条用例）加 dev 集 93 题、留出集 43 题的评测，**都不需要 Ollama 也能跑**——关键的防幻觉保证都在服务端代码里，所以能离线证明它们成立。
 
 > **为什么另有一套「留出集」**：上面那 93 题（dev 集）既是唯一的评测依据，又是当初调阈值、
 > 调权重、加口语词表时**照着调**的那一套。它全绿只能说明"能通过这一套题"，
@@ -326,13 +327,35 @@ ollama pull qwen2.5:7b-instruct
 
 | 配置项 | 作用 |
 |---|---|
-| `LLM_MODEL` | 用哪个模型，要和 `ollama list` 里的一致 |
+| `LLM_BACKEND` | 用哪家大模型：`ollama`（本地，默认）/ `openai`（你自己的云端 API） |
+| `LLM_MODEL` | 本地模型用哪个，要和 `ollama list` 里的一致 |
+| `LLM_API_BASE` / `LLM_API_KEY` / `LLM_API_MODEL` | 云端接口地址、密钥、模型名（仅 `LLM_BACKEND=openai` 时生效） |
 | `APP_PORT` | 端口，默认 8765。被占用时改成别的 |
 | `APP_AUTO_OPEN` | 启动后是否自动开浏览器 |
 | `RETRIEVAL_MIN_SCORE` | 拒答阈值，默认 `0.40`。**调高更保守**（更容易说"找不到"），调低更容易命中 |
 | `ENABLE_VECTOR_SEARCH` | 是否启用语义检索，设 `false` 则只用关键词（零下载） |
 | `SAVE_HISTORY` | 是否保存聊天记录 |
 | `LLM_TIMEOUT` | 大模型超时秒数，模型首次加载慢时可以调大到 300 |
+
+### 觉得本地模型答得不够好？可以换成你自己的云端 API
+
+本地跑的是 7B 小模型（12G 显存能装下、断网也能用）。如果你已经买了云端大模型的
+API，可以把它接进来，回答质量会明显好一截：
+
+```ini
+LLM_BACKEND=openai
+LLM_API_BASE=https://api.deepseek.com/v1
+LLM_API_KEY=你申请到的密钥
+LLM_API_MODEL=deepseek-chat
+```
+
+任何 **OpenAI 兼容**的接口都能用（DeepSeek、OpenAI、智谱、Moonshot、自己部署的
+vLLM…），常见写法 `.env.example` 里都列出来了。
+
+⚠️ **换成云端之后，隐私边界就变了**：你在对话框里描述的系统情况会发送给那个服务商，
+不再只留在本机。页面顶部会常驻一条提示，文档 `docs/08` 里有完整说明。
+要恢复"数据完全不出本机"，把 `LLM_BACKEND` 改回 `ollama` 即可——防幻觉的那些保证
+（不编条款、不替你做适用性判断）都在服务端代码里，两种后端一样成立。
 
 ---
 

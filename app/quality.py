@@ -446,7 +446,8 @@ def evaluate_end2end(limit: int | None = None) -> dict:
     }
 
     if not llm.is_running():
-        return {"skipped": True, "reason": "Ollama 未运行，跳过端到端评测",
+        backend_name = "云端接口" if llm.is_cloud() else "Ollama"
+        return {"skipped": True, "reason": f"{backend_name}未就绪（{llm.active_model()}），跳过端到端评测",
                 "rows": [], "stats": stats}
 
     for q in questions:

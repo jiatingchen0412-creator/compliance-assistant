@@ -65,7 +65,7 @@ def _bool(key: str, default: bool) -> bool:
 # **单一来源**：CHANGELOG.md 里最新的一节 `## [vX.Y]` 必须与它一致。
 # 由 tests/check_syntax.py 的 check_version_sync() 强制——改一个就必须改另一个，
 # 否则静态检查失败。这样用户报障时从 /api/health 拿到的版本号一定对得上更新日志。
-APP_VERSION = "1.7"
+APP_VERSION = "1.8"
 
 # ---------- Web ----------
 APP_HOST = _str("APP_HOST", "127.0.0.1")
@@ -73,11 +73,37 @@ APP_PORT = _int("APP_PORT", 8765)
 APP_AUTO_OPEN = _bool("APP_AUTO_OPEN", True)
 
 # ---------- 大模型 ----------
+# 后端二选一（LLM_BACKEND）：
+#   ollama —— 本地模型，数据不出本机。默认值，隐私承诺靠它。
+#   openai —— 任何 **OpenAI 兼容** 的云端接口（DeepSeek / OpenAI / 智谱 /
+#             Moonshot / 自建 vLLM…）。给"对本地 7B 效果不满意、自己买了 API"的用户用。
+#
+# 切到 openai 时，用户描述的系统情况会发送到你配置的那个服务商，
+# **隐私承诺随之改变**。页面顶部会常驻提示，docs/08 有完整说明。
+LLM_BACKEND = _str("LLM_BACKEND", "ollama").strip().lower()
+if LLM_BACKEND not in ("ollama", "openai"):
+    LLM_BACKEND = "ollama"
+
 OLLAMA_BASE_URL = _str("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
 LLM_MODEL = _str("LLM_MODEL", "qwen2.5:7b-instruct")
 LLM_TEMPERATURE = _float("LLM_TEMPERATURE", 0.0)
 LLM_MAX_TOKENS = _int("LLM_MAX_TOKENS", 2048)
 LLM_TIMEOUT = _int("LLM_TIMEOUT", 180)
+
+# 云端接口（LLM_BACKEND=openai 时才用；密钥只放 .env，绝不进仓库）
+LLM_API_BASE = _str("LLM_API_BASE", "https://api.deepseek.com/v1").rstrip("/")
+LLM_API_KEY = _str("LLM_API_KEY", "")
+LLM_API_MODEL = _str("LLM_API_MODEL", "deepseek-chat")
+# 结构化输出怎么要：
+#   json_object —— 只要求"返回 JSON"（兼容性最好，主流服务商都支持）
+#   json_schema —— 要求按 JSON Schema 约束（OpenAI 结构化输出等）
+#   none        —— 不加约束，只靠提示词（兜底，最不稳）
+LLM_API_JSON_MODE = _str("LLM_API_JSON_MODE", "json_object").strip().lower()
+if LLM_API_JSON_MODE not in ("json_object", "json_schema", "none"):
+    LLM_API_JSON_MODE = "json_object"
+# 云端接口是否读取系统代理。默认不读：Windows 上 Clash 之类会把请求劫走，
+# 返回 502 空响应。如果你的网络**必须**走代理才能出网，把它设为 true。
+LLM_API_TRUST_ENV = _bool("LLM_API_TRUST_ENV", False)
 
 # ---------- 检索 ----------
 HYBRID_KEYWORD_WEIGHT = _float("HYBRID_KEYWORD_WEIGHT", 0.5)
@@ -99,13 +125,17 @@ HIGH_RISK_TAGS = {"encryption", "access_control", "personal_info"}
 
 
 def as_dict() -> dict:
-    """给前端展示的当前配置（不含任何密钥，本地模型也没密钥）。"""
+    """给前端展示的当前配置。**不含任何密钥**——API Key 永远不出现。"""
+    cloud = LLM_BACKEND == "openai"
     return {
         "app_host": APP_HOST,
         "app_port": APP_PORT,
-        "llm_backend": "ollama",
+        "llm_backend": LLM_BACKEND,
+        "cloud_enabled": cloud,
         "ollama_base_url": OLLAMA_BASE_URL,
-        "llm_model": LLM_MODEL,
+        "llm_api_base": LLM_API_BASE if cloud else "",
+        "llm_api_key_set": bool(LLM_API_KEY),
+        "llm_model": LLM_API_MODEL if cloud else LLM_MODEL,
         "retrieval_min_score": RETRIEVAL_MIN_SCORE,
         "retrieval_top_k": RETRIEVAL_TOP_K,
         "enable_vector_search": ENABLE_VECTOR_SEARCH,

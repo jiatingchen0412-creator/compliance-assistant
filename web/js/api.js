@@ -132,6 +132,28 @@ const API = {
       return null;
     }
   },
+
+  /**
+   * 云端模型的常驻提示。
+   *
+   * 隐私边界变了就必须让用户在页面上看见，不能只写在 .env 注释里：
+   * 用本地模型时用户的问题不离开这台机器，切到云端后每一句都会发出去。
+   * 所以这不是"可选提示条"，而是换成云端后端时一定出现的一条说明。
+   * 本地后端时把元素 hidden 起来，不留空白。
+   */
+  renderPrivacyNotice(health) {
+    const box = document.getElementById('privacyNote');
+    if (!box) return;
+    const llm = (health && health.llm) || {};
+    const text = llm.privacy_notice || '';
+    if (!llm.cloud || !text) {
+      box.hidden = true;
+      box.textContent = '';
+      return;
+    }
+    box.hidden = false;
+    box.textContent = text;
+  },
 };
 
 /* ---------- 小工具 ---------- */

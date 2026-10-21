@@ -6,9 +6,13 @@
 
 ## 这是什么
 
-一个**完全离线**运行的安全合规自查工具：用户用大白话描述自己的系统，程序在本地知识库
+一个**默认完全离线**运行的安全合规自查工具：用户用大白话描述自己的系统，程序在本地知识库
 （等保 2.0 / NIST CSF 2.0 / OWASP Top 10，283 条）里检索对应条款，由本地大模型
-（Ollama + Qwen2.5-7B）生成回答，并对高风险项加 ⚠️ 标注。全部数据留在本机，不联网。
+（Ollama + Qwen2.5-7B）生成回答，并对高风险项加 ⚠️ 标注。默认全部数据留在本机，不联网。
+
+> 有一个**显式开启**的例外：`LLM_BACKEND=openai` 时可以接用户自己的 OpenAI 兼容
+> 云端接口（给"不满意本地 7B"的用户用）。默认值是 `ollama`，所以默认仍然离线。
+> 切到云端后页面顶部会常驻隐私提示，且 API Key 只从 `.env` 读、永不进返回值与日志。
 
 技术栈刻意保守：**Python + FastAPI + SQLite + 原生 HTML/CSS/JS**。
 没有前端框架、没有构建步骤、没有 CDN——用户双击 `启动助手.bat` 就能跑。
@@ -45,7 +49,7 @@
 
 ### 每步做完的自检清单
 
-- [ ] 全部 16 个套件通过（`tests/check_syntax.py` 一定最先跑）
+- [ ] 全部 17 个套件通过（`tests/check_syntax.py` 一定最先跑）
 - [ ] 改了检索/提示词/防幻觉 → `run_eval.py --no-llm` 仍达标
 - [ ] 改了前端 → `tests/test_frontend.py` 通过（真浏览器，不是看 HTTP 200）
 - [ ] 改了配置项 → `.env.example` 与 `tools/sync_config.py` 同步
@@ -124,7 +128,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 ## 常用命令
 
 ```powershell
-# 跑全部测试（16 个套件；其中 13 个逐条计数，共 233 条用例）
+# 跑全部测试（17 个套件；其中 14 个逐条计数，共 244 条用例）
 .venv\Scripts\python.exe tests\check_syntax.py       # 静态检查，最先跑
 .venv\Scripts\python.exe tests\run_eval.py --no-llm  # 检索与判定质量（93 题，不需要 Ollama，秒级）
 .venv\Scripts\python.exe tests\run_eval.py           # 加上端到端那层（需要 Ollama，分钟级）
@@ -142,6 +146,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 .venv\Scripts\python.exe tests\test_level_denial.py  # 等级判定矩阵（锚点闭集 + 回答侧兜底，不需要 Ollama）
 .venv\Scripts\python.exe tests\test_answer_render.py # 服务端答案拼装与概述过滤（模型不再写正文）
 .venv\Scripts\python.exe tests\test_answer_assembly.py # 组装一致性（逐行穷举，模型文本进正文就红）
+.venv\Scripts\python.exe tests\test_llm_provider.py  # 大模型后端可切换（本地/云端，不联网，验证密钥不泄露）
 
 # 起服务 / 健康检查
 .venv\Scripts\python.exe -m app.main
@@ -178,6 +183,7 @@ Ollama 没开、模型没下、显存不够——这些都不是测试失败的�
 | 坑 | 症状 | 修法 |
 |---|---|---|
 | 系统代理 | 本地 Ollama 请求被送去 `127.0.0.1:7897`，静默降级 | `httpx` 客户端加 `trust_env=False`；测试就绪探针用 `http.client` |
+| 云端接口也要 trust_env 决策 | 抄本地客户端时把 `trust_env` 一起抄成 false，需要走代理出网的用户连不上 | `LLM_API_TRUST_ENV` 单独开关，默认 false；`test_llm_provider.py` 钉住两者各自独立 |
 | GBK / cp1252 控制台 | 输出被重定向时打印 ⚠️/✅/中文直接抛 `UnicodeEncodeError` 终结进程 | `import app.console`（`app/__init__.py` 已自动导入）；**不 import app 的独立脚本要自己 `reconfigure(encoding="utf-8")`**，`check_console_encoding()` 会强制 |
 | 编码坑在本地复现不了 | 本机代码页是 GBK，中文编得出来；CI 的 windows runner 是 cp1252，才崩 | `$env:PYTHONIOENCODING = "cp1252"` 再跑一遍脚本即可复现 |
 | `.bat` 中文 | 双击毫无反应，cmd 报 `'xxx' is not recognized` | `.bat` 只写纯 ASCII |
