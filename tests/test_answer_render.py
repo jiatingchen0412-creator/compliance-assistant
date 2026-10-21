@@ -385,9 +385,29 @@ def test_empty_clauses() -> tuple[bool, str]:
     return check(not problems, "空条款时只有开场与收尾", f"{problems}")
 
 
+@case("每条答案都写明知识库覆盖范围（域外问题靠披露，不靠分类器）")
+def test_scope_statement_always_present() -> tuple[bool, str]:
+    problems: list[str] = []
+    for mode in ("llm", "retrieval_only", "parse_failed"):
+        text = _render(mode=mode)
+        if answer.SCOPE_STATEMENT not in text:
+            problems.append(f"{mode} 模式下缺少覆盖范围声明")
+    text = _render(clauses=[])
+    if answer.SCOPE_STATEMENT not in text:
+        problems.append("没有条款时也必须有覆盖范围声明")
+    for name in ("等保2.0", "NIST CSF 2.0", "OWASP Top 10"):
+        if name not in answer.SCOPE_STATEMENT:
+            problems.append(f"声明里没写清覆盖 {name}")
+    for word in ("人事", "财税", "物业", "教育"):
+        if word not in answer.SCOPE_STATEMENT:
+            problems.append(f"声明里没举出不在范围的例子：{word}")
+    if "本回答仅用于辅助自查" not in answer.CLOSING:
+        problems.append("加了覆盖范围却把免责说明弄丢了")
+    return check(not problems, "三种模式与空条款都带覆盖范围声明", f"{problems}")
+
+
 @case("模型把话塞进 followup_questions：追问一律换成服务端固定清单（t30 追问通道）")
 def test_followups_not_from_model() -> tuple[bool, str]:
-    # 追问句和答案正文是同一类东西：用户会逐字读它。t30 红队把
     # 「你们应当按三级建设。」塞进 followup_questions，旧实现原样返回给前端。
     smuggled = "你们应当按三级建设。"
     problems: list[str] = []
