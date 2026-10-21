@@ -140,6 +140,62 @@ def test_app_version_single_source():
     )
 
 
+# --------------------------------------------------------------------------
+# 3. 端到端红线不能把「崩了」当成「通过」
+#
+# 旧实现里 errors 只 += 1 就 continue，跳过的题连分母也不再算。
+# 于是 10 道题崩 8 道、剩下 2 道答对，`check_end2end_red_lines` 返回 passed=True。
+# 这是本项目第 5 次出现同一类病：失败被翻译成成功，只是这次伪装成「样本变少」。
+# --------------------------------------------------------------------------
+def _e2e_stats(**over) -> dict:
+    stats = {
+        "clarify_total": 4, "clarify_ok": 4,
+        "outkb_total": 6, "outkb_ok": 6,
+        "errors": 0,
+        "clarify_expected": 4, "outkb_expected": 6,
+    }
+    stats.update(over)
+    return stats
+
+
+@case("端到端有题抛异常时红线必须判失败（不能只计数）")
+def test_end2end_errors_fail_the_gate():
+    # 真实场景：4 道追问题崩了 3 道，剩 1 道答对 —— 比例 1/1 = 100%，但样本已经废了
+    broken = quality.check_end2end_red_lines(
+        _e2e_stats(clarify_total=1, clarify_ok=1, outkb_total=1, outkb_ok=1, errors=3)
+    )
+    healthy = quality.check_end2end_red_lines(_e2e_stats())
+    problems = []
+    if broken["passed"]:
+        problems.append(f"异常 3 个却 passed=True（items={[i['name'] for i in broken['items']]}）")
+    if not any("异常" in f for f in broken["failures"]):
+        problems.append(f"failures 没提到异常：{broken['failures']!r}")
+    if not healthy["passed"]:
+        problems.append(f"全绿的统计反而判失败：{healthy['failures']!r}")
+    if problems:
+        return False, "；".join(problems)
+    return True, (
+        "异常 3 个 → passed=False（"
+        + broken["failures"][-1]
+        + "）；异常 0 且题数齐全 → passed=True"
+    )
+
+
+@case("端到端题数比期望少时红线必须判失败（分母不缩水）")
+def test_end2end_sample_shrink_fails_the_gate():
+    # errors=0 却少了几道题：说明评测范围被动过，不能拿缩小的样本报达标
+    shrunk = quality.check_end2end_red_lines(_e2e_stats(clarify_total=1, outkb_total=6))
+    verdict = quality.check_end2end_red_lines(_e2e_stats())
+    problems = []
+    if shrunk["passed"]:
+        problems.append("追问题只剩 1 道（期望 4）却 passed=True")
+    if not verdict["passed"]:
+        problems.append(f"题数齐全时反而判失败：{verdict['failures']!r}")
+    if problems:
+        return False, "；".join(problems)
+    return True, "追问题 1/4 → passed=False；4/4 且库外 6/6 → passed=True"
+
+
 def main_runner() -> int:
     print("=" * 76)
     print("质量自检三态 · 版本号单一来源（不启动 Ollama，不碰真实数据）")

@@ -404,6 +404,10 @@ def evaluate_end2end(limit: int | None = None) -> dict:
         "clarify_total": 0, "clarify_ok": 0,
         "outkb_total": 0, "outkb_ok": 0,
         "errors": 0,
+        # 期望题数。没有这两个数，一道题抛异常就等于「从没出过这道题」：
+        # 分母跟着变小，剩下的都答对，红线照样 passed=True。
+        "clarify_expected": sum(1 for q in questions if q.get("clarify_expect")),
+        "outkb_expected": sum(1 for q in questions if q.get("expect") == "out_of_kb"),
     }
 
     if not llm.is_running():
@@ -466,7 +470,20 @@ def evaluate_end2end(limit: int | None = None) -> dict:
 
 
 def check_end2end_red_lines(stats: dict) -> dict:
-    """端到端的红线。比第一层宽松，因为模型行为本身有波动。"""
+    """端到端的红线。比第一层宽松，因为模型行为本身有波动。
+
+    但「宽松」只针对模型的随机输出，不针对崩溃：
+      ① 任何一道题抛异常，样本就少了，剩下的答对说明不了什么；
+      ② 两类题的实际题数必须等于期望题数，否则分母缩水会让比例虚高。
+    这两条都是「失败被翻译成成功」的入口——以前 errors 只计数、不判定。
+    """
+    clarify_expected = stats.get("clarify_expected", stats["clarify_total"])
+    outkb_expected = stats.get("outkb_expected", stats["outkb_total"])
+    completed = (
+        stats["errors"] == 0
+        and stats["clarify_total"] == clarify_expected
+        and stats["outkb_total"] == outkb_expected
+    )
     items = [
         {
             "name": "追问正确率",
@@ -482,6 +499,13 @@ def check_end2end_red_lines(stats: dict) -> dict:
             "total": stats["outkb_total"],
             "required": f"必须 = {stats['outkb_total']}",
             "passed": stats["outkb_total"] > 0 and stats["outkb_ok"] == stats["outkb_total"],
+        },
+        {
+            "name": f"端到端题目全部跑完（异常 {stats['errors']} 个）",
+            "actual": stats["clarify_total"] + stats["outkb_total"],
+            "total": clarify_expected + outkb_expected,
+            "required": "0 个异常，且两类题数不缩水",
+            "passed": completed,
         },
     ]
     failures = [
