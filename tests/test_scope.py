@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -513,6 +514,54 @@ def test_fake_ids_not_backfilled():
     if "引用核对" not in r["answer"] or "8.9.9.9" not in r["answer"]:
         return False, f"正文没有说明引用未匹配：{r['answer'][:120]!r}"
     return True, "不回填；正文明确写出『引用核对』并点出 8.9.9.9"
+
+
+@case("引用条数必须等于正文条款块数（正文列什么，引用就列什么）")
+def test_citations_match_rendered_blocks():
+    """旧行为：正文渲染全部 6 个条款块，引用卡片只有模型点名的 2 张。
+
+    读者会以为另外 4 条没有依据。改成以正文为准之后，这条用例守住两件事：
+    条数相等、编号逐条对应（不是"补几条真条款凑数"）。
+    """
+    reply = {
+        "answer": "",
+        "citations": ["8.1.4.1"],  # 模型只点名 1 条，正文会渲染 3 条
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [],
+        "found": True,
+    }
+    r = _run_answer("我们公司十几个人共用一个管理员账号", reply,
+                    [_clause("8.1.4.1", "身份鉴别"),
+                     _clause("8.1.4.7", "访问控制"),
+                     _clause("8.1.4.3", "安全审计")])
+    headers = re.findall(r"^\*\*([^\s*]+)[ 　]", r["answer"], re.M)
+    ids = [c["clause_id"] for c in r["citations"]]
+    if sorted(headers) != sorted(ids):
+        return False, f"正文条款块 {headers} 与引用 {ids} 不一致"
+    if len(ids) != 3:
+        return False, f"正文列了 3 条，引用却只有 {ids}"
+    return True, f"正文 {len(headers)} 块 ⇄ 引用 {len(ids)} 条，逐条一致"
+
+
+@case("模型编造编号时仍不回填（引用一致性不能破坏 P0-5）")
+def test_citations_consistency_keeps_p05():
+    reply = {
+        "answer": "",
+        "citations": ["9.9.9.9"],
+        "risk_tags": [],
+        "need_clarification": False,
+        "followup_questions": [],
+        "found": True,
+    }
+    r = _run_answer("我们公司十几个人共用一个管理员账号", reply,
+                    [_clause("8.1.4.1"), _clause("8.1.4.7")])
+    ids = [c["clause_id"] for c in r["citations"]]
+    if ids:
+        return False, f"编造编号时仍然回填了真条款：{ids}"
+    if "引用核对" not in r["answer"]:
+        return False, "编造编号却没有『引用核对』说明"
+    return True, "编造编号时不回填，只给正文说明"
 
 
 @case("模型自发引用库外法规：生产路径也会清理并声明（H-2 回归）")

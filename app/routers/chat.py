@@ -654,10 +654,23 @@ def answer_question(
     if forced_clarify_notice:
         answer_text = forced_clarify_notice + "\n" + answer_text
 
+    # 引用必须与正文一致。正文渲染的是**本次检索到的全部条款**（answer_mod.render 用的
+    # 就是 clauses），而 valid_citations 只有模型点名的那几条——旧行为会出现
+    # 「正文 6 个条款块、引用卡片 2 张」，读者会以为另外 4 条没有依据。
+    # 以正文为准：正文列了什么，引用就列什么。
+    # 例外：模型编了条款编号时（invalid_ids 非空）仍然不回填——P0-5 的结论不变，
+    # 那种情况下正文最前面已经写明「你提的编号不在检索结果中」，
+    # 此时再补一串真条款会让用户以为"我说的那条就在里面"。
+    shown_citations = (
+        [guard.to_citation(c) for c in clauses]
+        if (found and clauses and not invalid_ids)
+        else valid_citations
+    )
+
     result = {
         "session_id": sid,
         "answer": answer_text,
-        "citations": valid_citations,
+        "citations": shown_citations,
         "risks": risks,
         "need_clarification": need_clarify,
         "followup_questions": followups[:3],
