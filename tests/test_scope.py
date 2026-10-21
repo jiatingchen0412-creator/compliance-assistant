@@ -585,6 +585,34 @@ def test_answer_side_cleanup_in_chat():
     return True, "答案侧自发引用的《网络安全法》被清理，并补上未收录声明"
 
 
+@case("知识库原文里的『跨境传输』不能被当成库外法规转述删掉（t2 附注三回归）")
+def test_kb_text_not_eaten_by_out_of_kb_guard():
+    clause = _clause("8.1.4.28", "个人信息保护（出境与留存期限）")
+    clause["text"] = (
+        "要求个人信息的存储期限符合法律与业务约定，到期及时删除或匿名化，"
+        "跨境传输须依规进行。"
+    )
+    reply = {
+        "found": True,
+        "clauses": ["8.1.4.28"],
+        "risk_tags": ["personal_info"],
+        "need_clarification": False,
+        "followup_questions": [],
+    }
+    r = _run_answer("用户数据要存到海外机房，需要办什么手续？", reply, [clause])
+    if "跨境传输须依规进行" not in r["answer"]:
+        return False, (
+            "知识库原文被当成库外法规转述删掉了："
+            f"{r['answer'][:160]!r}"
+        )
+    if "未收录" in r["answer"]:
+        return False, (
+            "知识库自己的句子触发了『未收录法规』声明（防幻觉机制自己制造幻觉提示）："
+            f"{r['answer'][:160]!r}"
+        )
+    return True, "知识库原文完整保留，且没有被误判成库外法规转述"
+
+
 @case("多轮绕过：上一轮提过法规、这一轮只问第十三条仍被拦（H-3 回归）")
 def test_multiturn_bypass_blocked():
     reply = {

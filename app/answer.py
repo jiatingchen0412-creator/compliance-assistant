@@ -90,8 +90,26 @@ def topic_line(clauses: list[dict]) -> str:
 
 
 def _clause_body(clause: dict) -> str:
-    body = (clause.get("summary") or clause.get("text") or "").strip()
-    body = re.sub(r"\s+", " ", body)
+    """把一条条款压缩成一段给用户看的正文。
+
+    2026-10-21 改：优先用 `text`，不再优先用 `summary`。
+    `summary` 是编辑时写死的一句话（平均 47 字，283 条里 130 条以「…」结尾），
+    用户问"日志要保存多久"时，答案里只有"日志只留几天没法取证"，
+    而 `text` 里明明白白写着「留存期限（如不少于六个月）」。知识库知道答案、
+    渲染层却把它丢了，这不是模型的错。
+
+    NIST 的 `text` 是「英文原文 + 中文翻译」，英文那段对用户没用还占字数，
+    所以只取「中文翻译：」之后的部分。
+    """
+    raw = str(clause.get("text") or "").strip()
+    if not raw:
+        raw = str(clause.get("summary") or "").strip()
+    marker = "中文翻译："
+    if marker in raw:
+        translated = raw.split(marker, 1)[1].strip()
+        if translated:
+            raw = translated
+    body = re.sub(r"\s+", " ", raw)
     if len(body) > MAX_CLAUSE_CHARS:
         body = body[:MAX_CLAUSE_CHARS].rstrip() + "…"
     return body
@@ -140,6 +158,27 @@ def render_preface(clauses: list[dict], mode: str = "llm") -> str:
     return "\n\n".join([p for p in parts if p])
 
 
+def _clause_risk_tags(clauses: list[dict]) -> set[str]:
+    """本次渲染出来的条款，自己带哪些风险标签。
+
+    ⚠️ 标签必须**有条款撑着**。t2 的人工标注发现：模型对 20 道题里的 12 道
+    聚合出同一串「数据加密、访问控制、个人信息保护」，而其中 5 道题的 6 条条款
+    一条都不带这三个标签；q37/q38 还与题库的 `risk_forbid` 直接冲突。
+    模型能自由写的标签，等于让它在正文里加一句无依据的结论——所以这里
+    改成「模型说的标签，只有条款自己也这么标才显示」。
+    """
+    out: set[str] = set()
+    for clause in clauses or []:
+        tags = clause.get("risk_tags") or []
+        if isinstance(tags, str):
+            tags = [tags]
+        for tag in tags:
+            text = str(tag).strip()
+            if text:
+                out.add(text)
+    return out
+
+
 def render(
     question: str,
     clauses: list[dict],
@@ -154,10 +193,15 @@ def render(
     注意：question 只用于日志/未来扩展，**绝不会**把模型返回的自由文本
     拼进正文；调用方也不应该把模型写的 answer 或 summary 传进来——
     schema 里已经没有这两个字段了。
+
+    `risk_tags` 是模型给的，但**只用来收窄，不能用来新增**：只有条款自己也带了
+    这个标签，才显示（见 `_clause_risk_tags`）。
     """
     parts: list[str] = [render_preface(clauses, mode)]
 
-    risk = _risk_line(list(risk_tags or []))
+    supported = _clause_risk_tags(clauses)
+    asked = [str(t).strip() for t in (risk_tags or []) if str(t).strip()]
+    risk = _risk_line([t for t in asked if t in supported])
     if risk:
         parts.append(risk)
 

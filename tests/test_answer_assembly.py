@@ -131,12 +131,22 @@ def test_truncated_body_traceable():
     )
 
 
-@case("风险标签行可追溯（闭集标签）")
+@case("风险标签行可追溯（闭集标签，且必须有条款撑着）")
 def test_risk_line_traceable():
-    text = _render(risk_tags=["access_control", "encryption"])
-    has_line = "风险标签：" in text and "数据加密" in text
+    # CLAUSES 里只有 8.1.4.1 带 access_control
+    text = _render(risk_tags=["access_control"])
+    has_line = "风险标签：" in text and "访问控制" in text
     bad = answer.unaccounted_lines(text, CLAUSES)
-    return check(has_line and not bad, "风险标签行可追溯", f"标签缺失或追不到：{bad[:3]}")
+    if not (has_line and not bad):
+        return False, f"标签缺失或追不到：{bad[:3]}"
+    # 条款没标的标签不许显示：模型说「数据加密 / 个人信息保护」，
+    # 但本次 3 条条款都不带这两个标签（t2 附注一：12/20 道题的聚合标签无条款支撑）。
+    # 注意别拿「风险标签：」这个前缀判断——条款块自己也会带一行标签。
+    text2 = _render(risk_tags=["encryption", "personal_info"])
+    leaked = [w for w in ("数据加密", "个人信息保护") if w in text2]
+    if leaked:
+        return False, f"模型给了条款不支持的标签，却被渲染出来了：{leaked}"
+    return True, "支持的标签照常渲染，无条款支撑的标签被丢弃"
 
 
 @case("真实知识库条款渲染后逐行可追溯")

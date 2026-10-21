@@ -507,32 +507,27 @@ def answer_question(
     unmatched = [str(x) for x in invalid_ids]
     citation_warning = _citation_warning(unmatched)
 
-    # ---- 库外法规：先清掉转述，再由服务端强制补上"未收录"说明 ----
-    # 顺序很重要：先清模型写出来的东西，再拼服务端生成的说明。
-    # 反过来的话，服务端那段说明自己带着法规名，会被清理逻辑误伤。
-    # H-2：问题里没点名、但**模型自己在回答里写了**库外法规时，同样要清、要声明。
-    # 旧实现只检测问题，模型自发引用《网络安全法》第21条既不清理也不加声明。
-    # 兼容垫片：模型旧的 answer 字段已经不会被展示，但如果它"试图"写了库外法规，
-    # 仍然要让用户知道本工具不覆盖这部法规（声明由服务端写，模型删不掉）。
-    answer_out_of_kb = scope.merge_out_of_kb(
-        scope.detect_out_of_kb(answer_text),
-        scope.detect_out_of_kb(legacy_answer) if legacy_answer else [],
+    # ---- 库外法规：模型"试图"写了，就由服务端声明 ----
+    # H-2：问题里没点名、但**模型自己在回答里写了**库外法规时，同样要声明。
+    #
+    # 这里只扫**模型写的文本**（legacy_answer），绝不扫 answer_text。
+    # 结构性改造之后正文 100% 由 answer.render() 拼装，里面只有知识库原文与
+    # 服务端常量。拿正文去跑 scope.detect_out_of_kb 会把知识库自己的句子当成
+    # 「模型转述」删掉——实测 8.1.4.28 的「跨境传输须依规进行」被删，还多出
+    # 一段「未收录该法规」的声明。那是"防幻觉机制自己制造幻觉提示"（t2 附注三）。
+    answer_out_of_kb = (
+        scope.detect_out_of_kb(legacy_answer) if legacy_answer else []
     )
     all_out_of_kb = scope.merge_out_of_kb(out_of_kb, answer_out_of_kb)
     if all_out_of_kb:
         all_names = [d["name"] for d in all_out_of_kb]
-        answer_text, removed = guard.strip_out_of_kb_claims(answer_text, all_out_of_kb)
+        removed = 0
         from_answer = bool(answer_out_of_kb) and not out_of_kb
-        if removed:
-            notes.append(
-                f"已删除 {removed} 处可能转述库外法规内容的表述（该法规未收录在知识库中）"
-            )
-            log.info("已清理库外法规转述 · %d 处 · %s", removed, "、".join(all_names))
         if from_answer:
             notes.append(
                 "回答中出现了知识库未收录的法规（"
                 + "、".join(d["name"] for d in answer_out_of_kb)
-                + "），已清理并补上说明"
+                + "），已补上说明"
             )
         notice = scope.out_of_kb_notice(
             all_names, from_answer=from_answer, removed=removed

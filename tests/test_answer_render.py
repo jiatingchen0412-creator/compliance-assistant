@@ -337,6 +337,48 @@ def test_knowledge_sentences_preserved() -> tuple[bool, str]:
     )
 
 
+@case("条款正文优先用 text（summary 是编辑时写死的一句话，会把答案丢掉）")
+def test_clause_body_prefers_text() -> tuple[bool, str]:
+    # 真实案例（t2 附注二）：用户问"日志要保存多久"，A09:2021-3 的 summary 只说
+    # "日志只留几天没法取证"，而 text 里写着"留存期限（如不少于六个月）"。
+    clause = {
+        "clause_id": "A09:2021-3",
+        "title": "安全日志留存",
+        "summary": "日志只留几天没法取证，或者日志里全是明文手机号和口令。",
+        "text": "常见表现：日志只保留几天。自查方法：按法规与业务要求设定留存期限（如不少于六个月）并落实归档。",
+        "standard_name": "OWASP Top 10 2021",
+        "risk_tags": [],
+    }
+    body = answer._clause_body(clause)
+    problems: list[str] = []
+    if "不少于六个月" not in body:
+        problems.append(f"text 里的关键事实被丢了：{body!r}")
+    if "日志只留几天没法取证" in body:
+        problems.append("仍用了 summary（一句话版本）")
+
+    # NIST 的 text 是「英文原文 + 中文翻译」，英文那段对用户没用还占字数
+    nist = {
+        "clause_id": "GV.OC-01",
+        "title": "组织使命",
+        "summary": "先弄清公司靠什么赚钱。",
+        "text": "英文原文：The organizational mission is understood.\n中文翻译：组织的使命得到理解，并用于指导网络安全风险管理工作。",
+        "standard_name": "NIST CSF 2.0",
+        "risk_tags": [],
+    }
+    nist_body = answer._clause_body(nist)
+    if "The organizational mission" in nist_body:
+        problems.append(f"NIST 的英文原文被拼进正文了：{nist_body!r}")
+    if "组织的使命得到理解" not in nist_body:
+        problems.append(f"NIST 的中文翻译丢了：{nist_body!r}")
+
+    # text 为空时仍要退回 summary（不能把正文变成空白）
+    fallback = answer._clause_body({"summary": "只有摘要的条款", "text": ""})
+    if "只有摘要的条款" not in fallback:
+        problems.append(f"text 为空时没有退回 summary：{fallback!r}")
+
+    return check(not problems, "text 优先、NIST 取中文、text 空时退回 summary", f"{problems}")
+
+
 @case(f"条款正文超长截断到 {answer.MAX_CLAUSE_CHARS} 字并加省略号")
 def test_clause_body_truncated() -> tuple[bool, str]:
     long_text = "应" + "对重要数据进行加密" * 40
