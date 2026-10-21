@@ -219,7 +219,7 @@
 ### 变更
 
 - 测试规模：**16 个套件 / 216 条用例**（其中 13 个逐条计数），
-  原来 12 个套件 / 114 条。dev 集 49 → **72** 题，留出集 37 题。
+  原来 12 个套件 / 114 条。dev 集 49 → **72** 题，留出集 43 题。
 - `RED_LINES`：`reject_required` 5 → **10**，`undet_required` 4 → **27**，
   新增 `clarify_required` 4。四项一票否决：拒答 / 库外法规 / 适用性判定 / 追问。
 - CI 的 actions 版本升到 checkout@v7 / setup-python@v7 / setup-node@v7 / cache@v6。
