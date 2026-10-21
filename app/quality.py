@@ -109,6 +109,9 @@ def _empty_stats() -> dict:
         "undet_total": 0, "undet_ok": 0,
         "clarify_total": 0, "clarify_ok": 0,
         "forbid_total": 0, "forbid_ok": 0,
+        # 拒答是靠哪一道闸门达成的。16/16 全绿却看不出"有多少是靠阈值蒙中的"，
+        # 就没法判断词表与话题闸门到底在不在干活。
+        "reject_channels": {},
     }
 
 
@@ -147,8 +150,15 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
         # 关键词分只有 0.10~0.17，语义分却高达 0.84~0.93，融合后照样过 0.40。
         # 这类只能靠 scope 的领域证据判掉——调阈值切不开，因为 dev 集里关键词分
         # 最低的该命中题（0.137）比这些拒答题（0.165）还低。详见 app/scope.py。
-        blocked, blocked_domain, blocked_terms = scope.detect_out_of_domain(q["question"])
-        found = best >= config.RETRIEVAL_MIN_SCORE and not blocked
+        # 闸门顺序由 scope.pre_model_gate() 定义，生产与评测调同一份实现。
+        # 这里绝不能再自己抄一遍 if：2026-10-21 的独立审计就是评测只抄了阈值、
+        # 漏了话题闸门 —— 留出集 h10/h11 在生产路径上被拒答，评测却判 ok=True。
+        verdict = scope.pre_model_gate(q["question"], best, has_clauses=bool(result["results"]))
+        blocked = verdict.mode == scope.GATE_OUT_OF_DOMAIN
+        blocked_domain = verdict.label if blocked else ""
+        blocked_terms = list(verdict.terms)
+        no_kb_topic = verdict.label if verdict.mode == scope.GATE_NO_KB_TOPIC else ""
+        found = verdict.mode == scope.GATE_ANSWER
         got = [c["clause_id"] for c in result["results"]]
         detail = ""
         ok = True
@@ -162,11 +172,11 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
             # 「本工具不包含价格与费用的信息」——那是拒答，不是回答。
             # 以前评测不看这一路：h10「优惠券能重复领取…」被判 ok=True，
             # 生产路径却在拒答（t31 独立审计复现）。所以这里也要算失败。
-            no_kb_topic = scope.detect_no_kb_topic(q["question"])
+            no_kb_topic = verdict.label if verdict.mode == scope.GATE_NO_KB_TOPIC else ""
             # 必须"召回了" **并且**"真的回答给用户了"才算通过。
             # 只看召回会有盲区：阈值调得过高的，条款照样在候选里（召回满分），
             # 但用户实际收到的是"知识库中未找到"——这显然是失败的。
-            if found and recalled and not no_kb_topic:
+            if found and recalled:
                 stats["hit_ok"] += 1
             else:
                 ok = False
@@ -176,6 +186,9 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
                 elif blocked:
                     detail = (f"被领域拦截（{blocked_domain}：{'、'.join(blocked_terms)}）"
                               f"—— 但这题是真题，说明词表误伤，要改 CYBER_TERMS 或剔词")
+                elif verdict.mode == scope.GATE_NEEDS_CONTEXT:
+                    detail = (f"被适用性判定拦住（{verdict.detail}）—— 但这题是真题，"
+                              f"说明判定特征误伤")
                 elif not found:
                     detail = (f"被阈值拒答（最高分 {best:.3f} < {config.RETRIEVAL_MIN_SCORE}），"
                               f"用户收到的是『未找到』")
@@ -186,8 +199,16 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
             stats["reject_total"] += 1
             if not found:
                 stats["reject_ok"] += 1
+                channels = stats["reject_channels"]
+                channels[verdict.mode] = channels.get(verdict.mode, 0) + 1
                 if blocked:
                     detail = f"领域拦截生效（{blocked_domain}：{'、'.join(blocked_terms)}）"
+                elif verdict.mode == scope.GATE_NO_KB_TOPIC:
+                    detail = f"话题闸门生效（{verdict.label}）"
+                elif verdict.mode == scope.GATE_NEEDS_CONTEXT:
+                    detail = "适用性判定生效"
+                else:
+                    detail = f"靠阈值拒答（最高分 {best:.3f} < {config.RETRIEVAL_MIN_SCORE}）"
             else:
                 ok = False
                 top = got[0] if got else "-"
@@ -210,13 +231,16 @@ def evaluate_retrieval(top_k: int = 6, questions: list[dict] | None = None,
         elif expect == "undeterminable":
             # 适用性判定类问题。同样不需要大模型：识别出来之后
             # chat.py 会**直接跳过模型**，用服务端模板回答。
+            # 这里也读闸门结论，而不是自己再调一次 needs_system_context ——
+            # 若哪天适用性判定被排到别的闸门后头，评测必须能看见。
             stats["undet_total"] += 1
-            hit_undet, why = scope.needs_system_context(q["question"])
+            hit_undet = verdict.mode == scope.GATE_NEEDS_CONTEXT
             if hit_undet:
                 stats["undet_ok"] += 1
             else:
                 ok = False
-                detail = "未被识别为『适用性判定』类问题，会被当成可回答的问题交给大模型"
+                detail = (f"未被识别为『适用性判定』类问题（闸门给出 {verdict.mode}），"
+                          f"会被当成可回答的问题交给大模型")
 
         elif expect == "clarify":
             # 信息不足、应当先追问的题。判定同样不需要大模型：
@@ -381,6 +405,8 @@ def run_check(top_k: int = 6) -> dict:
     verdict = check_red_lines(result["stats"])
     verdict["rows"] = result["rows"]
     verdict["stats"] = result["stats"]
+    # 拒答渠道分列：光看 16/16 不知道这几道闸门各自有没有在干活
+    verdict["reject_channels"] = result["stats"].get("reject_channels", {})
     verdict["skipped"] = False
     verdict["min_score"] = config.RETRIEVAL_MIN_SCORE
     verdict["keyword_weight"] = config.HYBRID_KEYWORD_WEIGHT

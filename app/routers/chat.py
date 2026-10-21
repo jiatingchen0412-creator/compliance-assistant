@@ -247,9 +247,15 @@ def answer_question(
     recent_user_text = _recent_user_text(sid)
     # 第五轮：多轮追问也要拦。用户第二轮只说「就按这个来建设吧」，本轮没有
     # 等级词，但上一轮问的是"定到哪一级"——把上一轮原文交给判定，避免漏判。
-    undeterminable, undet_reason = scope.needs_system_context(
-        question, recent_user_text
+    # 模型之前的闸门：顺序只定义在 scope.pre_model_gate() 一处，评测也调它。
+    # 这里只读结论，不再自己写一遍 if —— 抄两遍就会漏（h10/h11 就是这么漏的）。
+    verdict = scope.pre_model_gate(
+        question,
+        best,
+        has_clauses=bool(clauses),
+        recent_user_text=recent_user_text,
     )
+    undet_reason = verdict.detail if verdict.mode == scope.GATE_NEEDS_CONTEXT else ""
     out_of_kb = scope.detect_out_of_kb(question)
     if not out_of_kb:
         # H-3 多轮绕过：上一轮点名了库外法规、本轮只问「第十三条怎么规定的」时，
@@ -269,8 +275,9 @@ def answer_question(
     # 语义分却高达 0.84~0.93（bge-small-zh 觉得它们和「人员离岗」「管理制度评审」
     # 「合规产品采购」很像），融合后会盖过阈值。调阈值切不开——dev 集里关键词分
     # 最低的真题比这类拒答题还低。所以用领域证据判，判据在 app/scope.py。
-    out_domain, domain_label, domain_terms = scope.detect_out_of_domain(question)
-    if out_domain:
+    domain_label = verdict.label if verdict.mode == scope.GATE_OUT_OF_DOMAIN else ""
+    domain_terms = list(verdict.terms)
+    if verdict.mode == scope.GATE_OUT_OF_DOMAIN:
         result = {
             "session_id": sid,
             "answer": scope.out_of_domain_notice(domain_label, domain_terms),
@@ -290,8 +297,8 @@ def answer_question(
     # ---- 知识库完全没有的话题（价格 / 机构 / 通过率）：服务端直接答，不调模型 ----
     # 这几类问题的正确答案不在三套技术标准里，模型只能编数字、编机构名、编周期。
     # 检索分数还可能很高（"合规要花很多钱吗"语义上很像"合规成本"），阈值拦不住。
-    no_kb_topic = scope.detect_no_kb_topic(question)
-    if no_kb_topic:
+    no_kb_topic = verdict.label if verdict.mode == scope.GATE_NO_KB_TOPIC else ""
+    if verdict.mode == scope.GATE_NO_KB_TOPIC:
         result = {
             "session_id": sid,
             "answer": guard.ensure_disclaimer(scope.no_kb_topic_notice(no_kb_topic)),
@@ -308,7 +315,7 @@ def answer_question(
         log_qa(log, question, result, time.time() - t0)
         return result
 
-    if not clauses or best < config.RETRIEVAL_MIN_SCORE:
+    if verdict.mode == scope.GATE_THRESHOLD:
         # 即使检索不到条款，只要用户点名了库外法规，也要明确告诉他"没收录这部法规"，
         # 否则用户会以为"知识库里没有"等于"这事没法问"。
         notice = scope.out_of_kb_notice(out_of_kb_names)
@@ -333,7 +340,7 @@ def answer_question(
     # 这类问题的正确答案就是"无法在不了解您系统的情况下判定"，
     # 让模型去编一份"不适用条款清单"只会害人（实测它会把检索到的条款号照抄出来）。
     # 所以这里**刻意跳过模型**：既保证不会编，也省掉一次几秒的推理。
-    if undeterminable:
+    if verdict.mode == scope.GATE_NEEDS_CONTEXT:
         ref_clauses = clauses[:5]
         cited = [c["clause_id"] for c in ref_clauses]
         ctx_notes = [

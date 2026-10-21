@@ -603,12 +603,30 @@ def import_document(path: Path, progress: ProgressCb = _noop) -> dict:
 
     # 用文件名做标准 id
     stem = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff]+", "_", path.stem).strip("_") or "imported"
-    prefix = f"IMP-{stem[:16]}"
-    std_id = f"custom_{stem[:32]}"
+    base_id = f"custom_{stem[:32]}"
+    std_id = base_id
+    suffix = 1
+    # 撞名：同一个文件名再导入一次时，不能悄悄覆盖上一份同名标准的名字与版本。
+    # 以前 `upsert_standard` 会按 id 覆盖，用户看到的是"这次的文件名"，
+    # 上一份的元信息却没了，而它切的条款还挂在同一个 id 下面。
+    while db.query_one("SELECT 1 FROM standards WHERE id = ?", (std_id,)):
+        suffix += 1
+        std_id = f"{base_id}_{suffix}"
+    prefix = f"IMP-{stem[:16]}" + ("" if suffix == 1 else f"-{suffix}")
 
     clauses = split_into_clauses(lines, prefix)
     if not clauses:
         raise RuntimeError("没能从文档里切分出有效条款，请检查文件内容")
+
+    # 预校验：与 JSON 标准导入同一条规矩——写库之前先把每条都过一遍。
+    # 任何一条不合法就直接抛，数据库一个字节都不动（以前是先写标准元信息，
+    # 校验失败时标准已经被改掉了，且没有回滚）。
+    for raw in clauses:
+        try:
+            _normalize_clause(raw, std_id)
+        except Exception as exc:
+            cid = raw.get("clause_id") if isinstance(raw, dict) else "?"
+            raise ImportValidationError(f"第 {cid} 条不合法：{exc}") from exc
 
     meta = {
         "id": std_id,

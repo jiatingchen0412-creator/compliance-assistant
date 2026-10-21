@@ -193,6 +193,52 @@ def test_cannot_revert_twice():
 
 # --------------------------------------------------------------------------
 # 辅助
+@case("损坏的备份文件不许覆盖活库（先校验再恢复）")
+def test_restore_refuses_corrupt_backup():
+    # 以前 restore_backup 直接用 backup() 把源文件写进活库：
+    # 备份要是半截的（磁盘满 / 进程被杀 / 用户手动复制了正在写的库），
+    # 就等于用坏数据覆盖好数据，而且调用方会收到「恢复成功」。
+    junk = Path(tempfile.mkdtemp(prefix="bad_backup_")) / "app_20260101_000000_bad.db"
+    junk.write_bytes(b"this is not a sqlite database at all" * 50)
+
+    before = db.query_one("SELECT COUNT(*) AS c FROM clauses")["c"]
+    ok, message = backup.restore_backup(junk)
+    after = db.query_one("SELECT COUNT(*) AS c FROM clauses")["c"]
+
+    if ok:
+        return False, f"损坏的备份竟然恢复成功了：{message}"
+    if before != after:
+        return False, f"活库被改动了：{before} → {after} 条条款"
+    if "没有改动" not in message and "不可用" not in message:
+        return False, f"提示语没说清数据库没动：{message}"
+    return True, f"拒绝恢复：{message}；活库仍是 {after} 条条款"
+
+
+@case("同名文档再导入不会覆盖上一份标准（改存 _2）")
+def test_import_document_same_name_not_overwrite():
+    # 以前 std_id 直接由文件名生成，upsert_standard 会按 id 覆盖：
+    # 第二份同名文件导入后，第一份的名字与版本被悄悄改掉，可它切的条款
+    # 还挂在同一个 id 下面 —— 用户以为"更新了"，其实是两份混在一起。
+    workdir = Path(tempfile.mkdtemp(prefix="dup_doc_"))
+    doc = workdir / "重名测试办法.md"
+    doc.write_text(SAMPLE_DOC, encoding="utf-8")
+
+    first = ingest.import_document(doc)
+    second = ingest.import_document(doc)
+
+    if first["standard_id"] == second["standard_id"]:
+        return False, f"两次导入用了同一个标准 id：{first['standard_id']}"
+    row = db.query_one(
+        "SELECT name FROM standards WHERE id = ?", (first["standard_id"],)
+    )
+    if not row or row["name"] != "重名测试办法":
+        return False, f"第一份标准的名字被改掉了：{row['name'] if row else '丢了'}"
+    return True, (
+        f"第一次 {first['standard_id']}，第二次 {second['standard_id']}，"
+        f"第一份名字仍是「{row['name']}」"
+    )
+
+
 # --------------------------------------------------------------------------
 async def _do_import() -> dict:
     from app.routers import kb as kb_router

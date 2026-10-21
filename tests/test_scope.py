@@ -925,12 +925,23 @@ def test_credential_not_archive() -> tuple[bool, str]:
         ("报销凭证要留多久", "报销凭证"),
         ("记账凭证丢了怎么办", "记账凭证"),
         ("原始凭证要附在发票后面吗", "原始凭证"),
+        # 2026-10-22：去掉裸「凭证」后这一格反过来漏了。用户日常就说「凭证要保存
+        # 多久」，不会说「会计凭证」。补一条结构化判据（凭证 + 保存/归档/年限/丢），
+        # 这几条必须重新拦下，而「凭证填充」那类必须继续放行（见上面的 should_pass）。
+        ("凭证要保存多久", "凭证+保存"),
+        ("凭证需要归档几年", "凭证+归档"),
+        ("我们的凭证丢了怎么补", "凭证+丢"),
     ]
     for q, why in should_block:
         blocked, domain, terms = scope.detect_out_of_domain(q)
         if not blocked:
             return False, f"漏拦：{q}（应因「{why}」判为文书与档案管理）"
-    return True, "5 条网络安全写法全部放行，4 条会计单据写法全部拦下"
+    # 反向：结构化判据不能把网络安全场景吃掉
+    for q in ("凭证如何保存才符合等保要求", "凭证填充的攻击载荷怎么保存样本"):
+        blocked, domain, terms = scope.detect_out_of_domain(q)
+        if blocked:
+            return False, f"结构化判据误伤：{q} → {domain}：{terms}"
+    return True, "5 条网络安全写法全部放行，7 条单据/档案写法全部拦下，结构化判据不误伤"
 
 
 @case("价格闸门只认询价意图，事故里的金额不算问价（t31 审计 #3）")

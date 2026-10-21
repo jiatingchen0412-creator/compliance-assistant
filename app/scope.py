@@ -1144,6 +1144,14 @@ _CLAUSE_ID_HINT = re.compile(
     r"|[A-Z]{2,}(?::[A-Z]+\d{4}|\.(?:[A-Z]{2,})?-\d+)"
 )
 
+# 「凭证」不能当无条件域外词（凭证填充 / OAuth 凭证失窃都是网络安全问题），
+# 所以词表里只留「会计凭证」这类多字写法。代价是「凭证要保存多久」漏掉——
+# 用结构化判据补回来：凭证 + 保存/归档/年限/留存/年限这类档案语义。
+_OUT_OF_DOMAIN_STRUCTURAL = re.compile(
+    r"凭证[^。？！?；;]{0,10}?(保存|归档|存档|留存|年限|多久|几年|丢|遗失)"
+    r"|(保存|归档|存档|留存|丢|遗失)[^。？！?；;]{0,6}?凭证"
+)
+
 
 def detect_out_of_domain(question: str) -> tuple[bool, str, list[str]]:
     """问题是否根本不属于网络安全合规。
@@ -1165,6 +1173,17 @@ def detect_out_of_domain(question: str) -> tuple[bool, str, list[str]]:
                 if not domain:
                     domain = label
                 matched.append(t)
+
+    # 「凭证」这类词单列会误伤网络安全场景（凭证填充、OAuth 凭证失窃），
+    # 所以在词表里只收「会计凭证 / 报销凭证 / 记账凭证 / 原始凭证」这种多字写法。
+    # 但用户日常就说「凭证要保存多久」——去掉裸词后这一格就漏了。
+    # 补一个结构化判据：凭证 + 归档/保存/年限/留存，这才是档案管理的意思。
+    if not matched:
+        structural = _OUT_OF_DOMAIN_STRUCTURAL.search(text)
+        if structural:
+            domain = "文书与档案管理"
+            matched.append(structural.group(0))
+
     if not matched:
         return False, "", []
 
@@ -1189,4 +1208,83 @@ def out_of_domain_notice(domain: str, terms: list[str]) -> str:
         "如果您其实想问的是这件事的**信息安全侧面**（比如系统权限、数据保存与销毁、"
         "日志留存、访问控制），把那部分具体描述一下，我可以帮您对照条款。"
     )
+
+
+# --------------------------------------------------------------------------
+# 模型之前的闸门：顺序只写一遍
+# --------------------------------------------------------------------------
+# 这里原本有一份"隐式的顺序"：生产代码里三道闸门各写一个 if，评测代码里又把
+# 同样三道抄了一遍。两处一旦不同步，评测就会说"通过"而用户收到的是拒答。
+# 2026-10-21 的独立审计就是这么漏的：留出集 h10/h11 在生产路径上被判成
+# 「价格与费用」直接拒答，而 `quality.evaluate_retrieval()` 只检查阈值，判了 ok=True。
+#
+# 所以顺序只留这一份，生产与评测都调它。以后加第四道闸门只要改这里。
+GATE_NEEDS_CONTEXT = "needs_context"
+GATE_OUT_OF_DOMAIN = "out_of_domain"
+GATE_NO_KB_TOPIC = "no_kb_topic"
+GATE_THRESHOLD = "threshold"
+GATE_ANSWER = "answer"
+
+
+class PreModelVerdict:
+    """模型之前那道闸门的结论。
+
+    mode 依次可能为 needs_context / out_of_domain / no_kb_topic / threshold / answer，
+    取**第一个**命中的——顺序就是用户实际遇到的顺序。
+    """
+
+    __slots__ = ("mode", "detail", "label", "terms")
+
+    def __init__(self, mode: str, detail: str = "", label: str = "",
+                 terms: tuple[str, ...] = ()) -> None:
+        self.mode = mode
+        self.detail = detail
+        self.label = label
+        self.terms = tuple(terms)
+
+    @property
+    def refused(self) -> bool:
+        return self.mode != GATE_ANSWER
+
+    def __repr__(self) -> str:  # 便于测试与日志
+        return f"PreModelVerdict(mode={self.mode!r}, detail={self.detail!r})"
+
+
+def pre_model_gate(
+    question: str,
+    best_score: float,
+    *,
+    has_clauses: bool = True,
+    recent_user_text: str = "",
+    min_score: float | None = None,
+) -> PreModelVerdict:
+    """按生产顺序判定：这个问题要不要交给模型。
+
+    顺序（与 `routers/chat.py::answer_question` 完全一致）：
+      1. 要求判断适用性 / 定到哪一级        → needs_context
+      2. 根本不属于网络安全合规              → out_of_domain
+      3. 知识库完全没有的话题（价格 / 机构）  → no_kb_topic
+      4. 检索分低于阈值 / 一条都没找到        → threshold
+    """
+    if min_score is None:
+        from . import config  # 延迟导入：scope 是纯函数模块，尽量少依赖
+        min_score = config.RETRIEVAL_MIN_SCORE
+
+    undeterminable, reason = needs_system_context(question, recent_user_text)
+    if undeterminable:
+        return PreModelVerdict(GATE_NEEDS_CONTEXT, reason)
+
+    blocked, domain, terms = detect_out_of_domain(question)
+    if blocked:
+        return PreModelVerdict(GATE_OUT_OF_DOMAIN, domain, domain, terms)
+
+    topic = detect_no_kb_topic(question)
+    if topic:
+        return PreModelVerdict(GATE_NO_KB_TOPIC, topic, topic)
+
+    if not has_clauses:
+        return PreModelVerdict(GATE_THRESHOLD, "一条条款都没找到")
+    if best_score < min_score:
+        return PreModelVerdict(GATE_THRESHOLD, f"最高分 {best_score:.3f} < {min_score}")
+    return PreModelVerdict(GATE_ANSWER)
 

@@ -95,6 +95,8 @@ class RetrievalEngine:
         self._standards_version: str = ""
         self._df: dict[str, int] | None = None
         self._df_version: str = ""
+        self._clause_id_cache: list[tuple[int, str]] | None = None
+        self._clause_id_version: str = ""
         self._lock = threading.Lock()
 
     # ---------------- 语义模型 ----------------
@@ -306,13 +308,34 @@ class RetrievalEngine:
 
         判据与下面的 +0.5 加权完全一致（`_clause_id_named`），这样"保住候选"
         与"加权"不会各判各的。283 条逐条比一遍，比猜编号形状更可靠。
+
+        每次检索全表扫一遍大约 1.2 ms（占 search 总耗时的 7%）。这里按
+        `_loaded_version` 缓存一份 clause_id → rowid 的映射：知识库没变就不用重查，
+        变了（导入 / 撤销 / 重建索引）版本号会变，缓存自然失效。
         """
-        rows = db.query("SELECT id, clause_id FROM clauses WHERE enabled = 1")
+        rows = self._clause_id_rows()
         return [
-            int(r["id"])
-            for r in rows
-            if _clause_id_named(str(r["clause_id"]), question)
+            rowid
+            for rowid, clause_id in rows
+            if _clause_id_named(clause_id, question)
         ]
+
+    def _clause_id_rows(self) -> list[tuple[int, str]]:
+        version = self._index_version()
+        cached = getattr(self, "_clause_id_cache", None)
+        if (
+            cached is not None
+            and version
+            and version == getattr(self, "_clause_id_version", "")
+        ):
+            return cached
+        rows = [
+            (int(r["id"]), str(r["clause_id"]))
+            for r in db.query("SELECT id, clause_id FROM clauses WHERE enabled = 1")
+        ]
+        self._clause_id_cache = rows
+        self._clause_id_version = version
+        return rows
 
     def search(self, question: str, top_k: int | None = None) -> dict:
         """返回 {results: [...], best_score: float, vector_used: bool, query_terms: [...]}"""

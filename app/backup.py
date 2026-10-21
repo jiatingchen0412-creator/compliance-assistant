@@ -104,14 +104,67 @@ def list_backups() -> list[dict]:
     return out
 
 
+def _verify_db_file(path: Path) -> tuple[bool, str]:
+    """检查一个 .db 文件是不是完整、可用的本应用数据库。
+
+    为什么要有这一步：备份文件可能是半截的（磁盘满、进程被杀、用户手动
+    复制了正在写的库）。以前直接把半截文件 backup() 进活库，等于用坏数据
+    覆盖好数据，而且备份文件本身没被动过——用户以为"恢复"是安全的。
+    """
+    try:
+        conn = sqlite3.connect(path, timeout=10)
+    except Exception as exc:
+        return False, f"打不开：{exc}"
+    try:
+        row = conn.execute("PRAGMA integrity_check").fetchone()
+        verdict = str(row[0]) if row else "unknown"
+        if verdict.lower() != "ok":
+            return False, f"完整性检查未通过（{verdict[:80]}）"
+        names = {
+            str(r[0])
+            for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        missing = [t for t in ("standards", "clauses") if t not in names]
+        if missing:
+            return False, f"缺少必要的数据表（{'、'.join(missing)}）"
+        count = conn.execute("SELECT COUNT(*) FROM clauses").fetchone()[0]
+        if not count:
+            return False, "条款表是空的"
+    except Exception as exc:
+        return False, f"读取失败：{exc}"
+    finally:
+        conn.close()
+    return True, f"完整，{count} 条条款"
+
+
 def restore_backup(backup_path: str | Path) -> tuple[bool, str]:
     """把数据库恢复到指定备份的状态。
 
-    返回 (是否成功, 说明)。调用方负责在成功后让检索缓存失效。
+    返回 (是否成功, 说明)。**成功与否不再只看有没有抛异常**：
+      1. 先校验备份文件本身（integrity_check + 必要表 + 条款非空），
+         坏文件一律不碰活库；
+      2. 恢复前把当前状态再备份一份，这样"恢复"本身也能退回去；
+      3. 用 SQLite 官方 backup API 写入（不是复制文件，WAL 才不会丢）；
+      4. 恢复后再校验一次活库，失败就自动退回第 2 步那份。
+
+    刻意不用"写到临时文件再 os.replace"：Windows 上活库可能被其他连接打开，
+    replace 会失败；而且 app.db 还有 -wal / -shm 两个附属文件，只替换主文件
+    会留下不匹配的 WAL。用官方 backup API 是 SQLite 文档给的做法。
     """
     path = Path(backup_path)
     if not path.exists():
         return False, f"备份文件不存在：{path.name}"
+
+    ok, why = _verify_db_file(path)
+    if not ok:
+        log.error("拒绝恢复损坏的备份 %s：%s", path.name, why)
+        return False, f"这份备份不可用（{why}），当前数据库没有改动"
+
+    safety = create_backup("before_restore")
+    if safety is None:
+        return False, "恢复前无法备份当前数据库，已中止（不留半完成状态）"
 
     try:
         src = sqlite3.connect(path, timeout=15)
@@ -124,7 +177,18 @@ def restore_backup(backup_path: str | Path) -> tuple[bool, str]:
             dst.close()
     except Exception as exc:
         log.exception("恢复备份失败")
-        return False, f"恢复失败：{exc}"
+        return False, f"恢复失败：{exc}（恢复前的状态已存为 {safety.name}）"
 
-    log.warning("数据库已从备份恢复：%s", path.name)
-    return True, f"已恢复到备份 {path.name}"
+    after_ok, after_why = _verify_db_file(config.DB_PATH)
+    if not after_ok:
+        log.error("恢复后活库校验不通过，正在退回恢复前状态：%s", after_why)
+        back_ok, back_why = restore_backup(safety)
+        if back_ok:
+            return False, f"恢复后校验失败（{after_why}），已自动退回恢复前状态"
+        return False, (
+            f"恢复后校验失败（{after_why}），且退回也失败（{back_why}）；"
+            f"请手动用 {safety} 恢复"
+        )
+
+    log.warning("数据库已从备份恢复：%s（%s）", path.name, after_why)
+    return True, f"已恢复到备份 {path.name}（{after_why}）"

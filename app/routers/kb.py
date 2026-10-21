@@ -409,6 +409,16 @@ async def import_file(file: UploadFile = File(...)):
         else:
             restored, restore_msg = backup_mod.restore_backup(backup_file)
             if restored:
+                # 恢复成功后必须做两件事，否则用户看到的是"假恢复"：
+                # ① 恢复过来的库可能是旧结构，补一次建表/迁移；
+                # ② 检索引擎缓存里还留着导入失败那一刻的条目与向量，
+                #    不失效的话页面上的条款数量与撤销路径会对不上。
+                try:
+                    db.init_db()
+                    from ..retrieval import reset_engine_cache
+                    reset_engine_cache()
+                except Exception as cache_exc:  # 缓存失效失败不能让恢复结果变失败
+                    log.warning("恢复后刷新缓存失败：%s", cache_exc)
                 detail = f"导入失败：{exc}。已用导入前的备份自动恢复（{backup_file.name}）。"
             else:
                 detail = (

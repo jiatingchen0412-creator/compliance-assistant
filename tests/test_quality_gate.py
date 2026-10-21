@@ -196,6 +196,55 @@ def test_end2end_sample_shrink_fails_the_gate():
     return True, "追问题 1/4 → passed=False；4/4 且库外 6/6 → passed=True"
 
 
+@case("闸门顺序只写一遍：生产与评测都不许自己抄 detect_* 的 if")
+def test_gate_order_defined_once():
+    # 2026-10-21 独立审计抓到的缺陷：生产代码里三道闸门各写一个 if，
+    # 评测代码里又抄了一遍，抄漏了一道 → 留出集 h10/h11 在生产里被拒答、
+    # 评测却判 ok=True。这条用例守着"不许再抄第二遍"。
+    #
+    # 判据是源码层面：chat.py 与 quality.py 必须调用 scope.pre_model_gate()，
+    # 且不得直接调用 detect_out_of_domain / detect_no_kb_topic / needs_system_context
+    # （scope.py 自己当然可以调）。这是刻意选源码而不是行为 ——
+    # 行为测试只能证明"当前这几道闸门一致"，证明不了"以后加第四道时不会漏"。
+    importers = {
+        "app/routers/chat.py": (ROOT / "app" / "routers" / "chat.py").read_text(encoding="utf-8"),
+        "app/quality.py": (ROOT / "app" / "quality.py").read_text(encoding="utf-8"),
+    }
+    banned = ("detect_out_of_domain", "detect_no_kb_topic", "needs_system_context")
+    problems = []
+    for label, src in importers.items():
+        if "scope.pre_model_gate(" not in src:
+            problems.append(f"{label} 没有调用 scope.pre_model_gate()")
+        for name in banned:
+            if f"scope.{name}(" in src:
+                problems.append(f"{label} 仍在直接调用 scope.{name}()，闸门顺序出现了第二份")
+    if problems:
+        return False, "；".join(problems)
+    return True, "chat.py 与 quality.py 都只读 pre_model_gate() 的结论，没有第二份闸门顺序"
+
+
+@case("评测能看见每一道闸门：任一道拦下都判失败")
+def test_eval_sees_every_gate():
+    # 四类必然被拦的问题，pre_model_gate 应各给对应 mode；
+    # 而 evaluate_retrieval 一旦把它们当"该命中"题，就必须判失败。
+    from app import scope as scope_mod
+
+    samples = [
+        ("我们的系统要定到哪一级？", scope_mod.GATE_NEEDS_CONTEXT, 0.9),
+        ("公司员工的加班费和调休怎么算？", scope_mod.GATE_OUT_OF_DOMAIN, 0.9),
+        ("做等保要花多少钱？", scope_mod.GATE_NO_KB_TOPIC, 0.9),
+        ("什么都能问吗？", scope_mod.GATE_THRESHOLD, 0.02),
+    ]
+    problems = []
+    for question, want, score in samples:
+        got = scope_mod.pre_model_gate(question, score, has_clauses=True)
+        if got.mode != want:
+            problems.append(f"「{question}」闸门给出 {got.mode}，期望 {want}")
+    if problems:
+        return False, "；".join(problems)
+    return True, "适用性 / 领域 / 话题 / 阈值四道闸门各自正确命中"
+
+
 def main_runner() -> int:
     print("=" * 76)
     print("质量自检三态 · 版本号单一来源（不启动 Ollama，不碰真实数据）")
